@@ -77,12 +77,14 @@ MoteDeck 是一个以遥控器语音控制电脑为核心的 Windows 工具，�
 
 <img src="./assets/readme/vokie-support.svg" width="100%" alt="原生支持 Vokie：MoteDeck 通过本机回环 TCP 把遥控器话筒的声音交给 Vokie 插件，由 Vokie 整理成文字后自动上屏">
 
-Vokie 原生支持外接语音设备，MoteDeck 按它的插件协议做了适配，配套插件 [MoteDeck2Vokie](https://github.com/HZDavy/MoteDeck/tree/main/plugins/MoteDeck2Vokie) 当前版本为 0.1.5。装上之后，遥控器就是 Vokie 自己的语音设备：按住话筒键说话，音频由插件推进 Vokie 会话，松手后整理成完整文字再落进输入框。
+Vokie 原生支持外接语音设备，MoteDeck 按它的插件协议做了适配，配套插件 [MoteDeck2Vokie](https://github.com/HZDavy/MoteDeck/tree/main/plugins/MoteDeck2Vokie) 当前版本为 0.2.1。装上之后，遥控器就是 Vokie 自己的语音设备：按住话筒键说话，音频由插件推进 Vokie 会话，松手后整理成完整文字再落进输入框。
+
+**注意**：Vokie 本体升级到 2.0 版本后，原来的插件（0.1.5 及更早）无法使用，需要换成本次的 0.2.1。
 
 - 不用再配虚拟声卡和模拟快捷键：插件与 MoteDeck 走本机回环 `127.0.0.1` 直连（随机端口 + 共享 token），控制指令和音频都从这里过
 - Vokie 的语音模式会同步到 MoteDeck 的语音键配置，遥控器上按一下就能切换
-- 插件按 Vokie 当前会话类型走：闪记、翻译、语音指令各有各的通道，被拒时自动退回普通语音输入，不会出现「按了没反应」
-- 安装：在 MoteDeck「语音」页点「下载插件」，或下载 [最新版 MoteDeck2Vokie.zip](https://github.com/HZDavy/MoteDeck/releases/latest/download/MoteDeck2Vokie.zip) 并装进 Vokie 的插件目录；在 Vokie 中启用插件后，从 MoteDeck「语音」页开启连接，插件会按保存的连接状态自动连接。
+- 插件按 Vokie 当前会话类型走：语音输入、旁听、翻译、语音指令、闪记各有各的通道，被拒时自动退回普通语音输入，不会出现「按了没反应」
+- 安装：在 MoteDeck「语音」页点「下载插件」，或下载 [最新版 MoteDeck2Vokie-0.2.1.zip](https://github.com/HZDavy/MoteDeck/releases/latest/download/MoteDeck2Vokie-0.2.1.zip) 并装进 Vokie 的插件目录；在 Vokie 中启用插件后，从 MoteDeck「语音」页开启连接，插件会按保存的连接状态自动连接。
 
 <img src="docs/screenshots/plugin-page.png" width="100%" alt="语音页的「外部应用程序支持」面板：Vokie 与 OpenMexia 两个外部程序入口，各有访问官网、下载和连接按钮">
 
@@ -106,7 +108,7 @@ Vokie 原生支持外接语音设备，MoteDeck 按它的插件协议做了适�
 
 当前正式版为 **0.2.7**。直接下载 [MoteDeckSetup-0.2.7-unsigned.exe](https://github.com/HZDavy/MoteDeck/releases/download/v0.2.7/MoteDeckSetup-0.2.7-unsigned.exe)，或到[本版发布页](https://github.com/HZDavy/MoteDeck/releases/tag/v0.2.7)查看版本说明与后续更新。发布页同时提供 `SHA256SUMS.txt`，下载后可用 `Get-FileHash -Algorithm SHA256` 核对文件。
 
-需要 Vokie 插件时，下载[最新版 MoteDeck2Vokie.zip](https://github.com/HZDavy/MoteDeck/releases/latest/download/MoteDeck2Vokie.zip)，也可以直接在软件「语音」页的「外部应用程序支持」里点「下载插件」。
+需要 Vokie 插件时，下载[最新版 MoteDeck2Vokie-0.2.1.zip](https://github.com/HZDavy/MoteDeck/releases/latest/download/MoteDeck2Vokie-0.2.1.zip)，也可以直接在软件「语音」页的「外部应用程序支持」里点「下载插件」。
 
 - 系统要求：64 位 Windows 10 1809 或更高版本。
 - 双击安装包按提示安装，默认装到 `%LOCALAPPDATA%\MoteDeck`，并创建开始菜单与桌面快捷方式；之后从 Windows 设置 → 应用 → MoteDeck 卸载。
