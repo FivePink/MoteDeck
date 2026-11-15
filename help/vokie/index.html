@@ -700,8 +700,12 @@
 
 <h1 id="vokie-插件">Vokie 插件<a class="headerlink" href="#vokie-插件" title="Permanent link">&para;</a></h1>
 <p>Vokie 原生支持外接语音设备，MoteDeck 按它的插件协议做了适配。安装配套插件
-<a href="https://github.com/HZDavy/MoteDeck/tree/main/plugins/MoteDeck2Vokie">MoteDeck2Vokie</a>（0.1.4）后，
+<a href="https://github.com/HZDavy/MoteDeck/tree/main/plugins/MoteDeck2Vokie">MoteDeck2Vokie</a>（0.2.1）后，
 遥控器即为 Vokie 的外接语音设备：按住话筒键说话，音频由插件推进 Vokie 会话，松手后整理成完整文字再落进输入框。</p>
+<div class="admonition warning">
+<p class="admonition-title">Vokie 升级到 2.0 后要换新插件</p>
+<p>Vokie 本体升级到 2.0 版本后，原来的插件（0.1.5 及更早）无法使用，需要换成本次发布的 0.2.1。</p>
+</div>
 <h2 id="不使用插件与使用插件的区别">不使用插件与使用插件的区别<a class="headerlink" href="#不使用插件与使用插件的区别" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -742,7 +746,7 @@
 <h2 id="安装插件">安装插件<a class="headerlink" href="#安装插件" title="Permanent link">&para;</a></h2>
 <ol>
 <li>在 MoteDeck「语音」页的「外部应用程序支持」面板中，Vokie 一行提供「访问官网」「下载插件」两个入口；也可以直接从
-   <a href="https://github.com/HZDavy/MoteDeck/releases/latest">Releases</a> 下载 <code>MoteDeck2Vokie.zip</code>。</li>
+   <a href="https://github.com/HZDavy/MoteDeck/releases/latest">Releases</a> 下载 <code>MoteDeck2Vokie-0.2.1.zip</code>。</li>
 <li>将 ZIP 安装到 Vokie 的插件目录。</li>
 <li>在插件界面中点「开启连接」。</li>
 </ol>
@@ -751,8 +755,9 @@
 <p>安装后插件会与 MoteDeck 自动握手（随机端口与共享 token），走本机回环 <code>127.0.0.1</code>。</p>
 <h2 id="安装插件之后">安装插件之后<a class="headerlink" href="#安装插件之后" title="Permanent link">&para;</a></h2>
 <ul>
-<li><strong>语音模式同步</strong>：Vokie 的语音模式会同步到 MoteDeck 的语音键配置，按一下遥控器即可切换。</li>
-<li><strong>会话类型分流</strong>：闪记、翻译、语音指令各有独立通道；插件被拒时自动退回普通语音输入，不会出现「按下没有反应」。</li>
+<li><strong>语音模式同步</strong>：Vokie 的语音模式会同步到 MoteDeck 的语音键配置，按一下遥控器即可切换；插件上报的每条模式都带稳定 id，语音键在 MoteDeck 里改名后仍能认出对应模式。</li>
+<li><strong>旁听</strong>：对应 Vokie 的免提输入（切换录音），遥控器按住即开始录音、松开立即停止，不用再回到键盘上按开关。</li>
+<li><strong>会话类型分流</strong>：语音输入、旁听、翻译、语音指令、闪记各有独立通道；插件被拒时自动退回普通语音输入，不会出现「按下没有反应」。</li>
 <li><strong>短按与长按</strong>：短按只切换模式并弹出模式气泡，长按（约 0.25 秒）才开启 Vokie 会话。按下期间保留 0.8 秒预录缓冲，开始会话后一并补发，开口第一个字不丢。</li>
 <li><strong>气泡时机</strong>：会话被插件接受（<code>session_accepted</code>）后气泡才收起；若输入框先出现，气泡也会提前收掉。</li>
 <li><strong>掉线兜底</strong>：插件语音键在插件未连接、写 socket 失败或掉线竞态时，会回退到该键自身的快捷键注入；该键没有自己的快捷键时直接报失败，不会借用其它语音键的绑定。</li>
@@ -771,8 +776,16 @@
 </thead>
 <tbody>
 <tr>
+<td>Vokie 升级到 2.0 后插件按了没反应</td>
+<td>旧插件（0.1.5 及更早）已不能用于 Vokie 2.0，换成 0.2.1 插件并重新导入</td>
+</tr>
+<tr>
 <td>安装插件后按住话筒键没有反应</td>
 <td>在插件界面确认连接已开启；MoteDeck「语音」页应显示插件已连接</td>
+</tr>
+<tr>
+<td>按下去只提示「busy」，说不出话</td>
+<td>Vokie 自己的语音通道正忙（本机输入、翻译、闪记正在跑，或上次会话异常结束），重启 Vokie 即可恢复</td>
 </tr>
 <tr>
 <td>闪记只有提示音、没有胶囊</td>
