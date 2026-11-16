@@ -12,7 +12,7 @@
 
 欢迎通过 [Issues](https://github.com/HZDavy/MoteDeck/issues) 提交功能建议与 Bug 反馈，也欢迎直接提交 [Pull Request](https://github.com/HZDavy/MoteDeck/pulls)；使用说明见[使用帮助](https://hzdavy.github.io/MoteDeck/help/)。
 
-> [!声明]
+> [!NOTE]
 > Motedeck是**完全开源，永久免费**的项目，理论上可以支持任何用键盘快捷键唤醒的输入法，与任何输入法无任何利益关联。
 
 > [!NOTE]
