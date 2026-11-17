@@ -1,5 +1,5 @@
 """Replays the XRBM-026 CI hard gate's exact detection logic
-(``.github/workflows/windows-rc003-ci.yml``'s "Run test suite" step) in
+(``.github/workflows/windows-motedeck-ci.yml``'s "Run test suite" step) in
 Python, so its pattern-matching contract is covered by an automated test
 that runs on any OS - not just when a real Windows/pwsh runner exercises the
 actual step (mirrors this project's existing
@@ -32,10 +32,10 @@ from pathlib import Path
 
 _RC003_ROOT = Path(__file__).resolve().parents[1]
 _REPO_ROOT = _RC003_ROOT.parents[2]
-_CI_PATH = _REPO_ROOT / ".github" / "workflows" / "windows-rc003-ci.yml"
+_CI_PATH = _REPO_ROOT / ".github" / "workflows" / "windows-motedeck-ci.yml"
 _BUILD_CANDIDATE_PATH = _RC003_ROOT / "build" / "build-candidate.ps1"
 
-# Mirrors $forbiddenPatterns in windows-rc003-ci.yml's "Run test suite" step
+# Mirrors $forbiddenPatterns in windows-motedeck-ci.yml's "Run test suite" step
 # exactly - keep both lists in sync. "ResourceWarning:" (colon included, not
 # a bare "ResourceWarning") deliberately matches Python's own exact
 # warning-output text - unittest's own -v output prints fully-qualified test

@@ -29,7 +29,7 @@ built from the standalone ``src/launcher.py`` entry point - see XRBM-021):
 - ``--dry-run``   import every first-party module and exit 0, touching no
                    GUI, BLE, Raw Input, or audio device - the safe smoke
                   check build-candidate.ps1 and
-                  .github/workflows/windows-rc003-ci.yml run against a
+                  .github/workflows/windows-motedeck-ci.yml run against a
                   freshly built artifact (XRBM-014 review RETRY P2 #3: a
                    build that produces an executable which cannot even be
                    launched is not caught by the PyInstaller build step

@@ -24,7 +24,7 @@ _SPEC_PATH = _RC003_ROOT / "build" / "MoteDeck.spec"
 _VERSION_PATH = _RC003_ROOT / "src" / "motedeck" / "VERSION"
 _REQUIREMENTS_PATH = _RC003_ROOT / "requirements.txt"
 _ISS_PATH = _RC003_ROOT / "installer" / "MoteDeckSetup.iss"
-_CI_PATH = _REPO_ROOT / ".github" / "workflows" / "windows-rc003-ci.yml"
+_CI_PATH = _REPO_ROOT / ".github" / "workflows" / "windows-motedeck-ci.yml"
 _PACKAGE_MAIN_PATH = _RC003_ROOT / "src" / "motedeck" / "__main__.py"
 _LAUNCHER_PATH = _RC003_ROOT / "src" / "launcher.py"
 _HID_HELPER_LAUNCHER_PATH = _RC003_ROOT / "src" / "hid_helper_launcher.py"
@@ -405,7 +405,7 @@ class PyInstallerSpecTests(unittest.TestCase):
         # copies verbatim), never as a `binaries`/hiddenimports entry that
         # would imply this project links against or executes vendor code at
         # build time. build/fetch-vb-cable.ps1 (a required gate in both
-        # build-candidate.ps1 and windows-rc003-ci.yml, run BEFORE this spec)
+        # build-candidate.ps1 and windows-motedeck-ci.yml, run BEFORE this spec)
         # is what actually places the verified file on disk; this spec stays
         # defensive (only bundles it if present), matching the existing
         # photo/qml datas entries.
@@ -1436,7 +1436,7 @@ class WindowsCiWorkflowTests(unittest.TestCase):
         self.assertIn('python-version: "3.12.10"', self.text)
 
     def test_scoped_to_rc003_paths(self):
-        self.assertIn("apps/windows/rc003/**", self.text)
+        self.assertIn("apps/windows/motedeck/**", self.text)
 
     def test_runs_public_boundary_scan(self):
         self.assertIn("check-public-boundary.ps1", self.text)
@@ -1575,7 +1575,7 @@ class WindowsCiWorkflowTests(unittest.TestCase):
         # packages root COPYRIGHT/LICENSE/THIRD_PARTY_NOTICES.md, and the
         # device-profiles/xiaomi-rc003.json documents identity/HID facts
         # this Windows adapter mirrors - none of these live under
-        # apps/windows/rc003/, so the path-scoped trigger above would
+        # apps/windows/motedeck/, so the path-scoped trigger above would
         # otherwise silently skip CI on a change to any of them.
         #
         # Matched as an exact YAML list-item LINE (leading "      - "),
@@ -1603,7 +1603,7 @@ class WindowsCiWorkflowTests(unittest.TestCase):
 
     def test_pip_cache_uses_the_exact_requirements_dev_path(self):
         self.assertIn(
-            "cache-dependency-path: apps/windows/rc003/requirements-dev.txt",
+            "cache-dependency-path: apps/windows/motedeck/requirements-dev.txt",
             self.text,
         )
 
@@ -1627,7 +1627,7 @@ class WindowsCiWorkflowTests(unittest.TestCase):
     def test_ci_checks_third_party_inventory_with_installer_toolchain(self):
         self.assertIn("check-third-party-notices.py", self.text)
         self.assertIn("choco install innosetup", self.text)
-        self.assertIn("group: windows-rc003-ci-${{ github.workflow }}-${{ github.ref }}", self.text)
+        self.assertIn("group: windows-motedeck-ci-${{ github.workflow }}-${{ github.ref }}", self.text)
 
     def test_test_suite_is_gated_by_resource_warning(self):
         self.assertIn("-W error::ResourceWarning build/check_native.py", self.text)
@@ -1842,7 +1842,7 @@ class WindowsCiWorkflowTests(unittest.TestCase):
         step = self._package_step_text()
         archive_index = step.index("Assert-MoteDeckPortableZip")
         installer_index = step.index(
-            '$releaseDir = "$env:GITHUB_WORKSPACE/apps/windows/rc003/dist/release"'
+            '$releaseDir = "$env:GITHUB_WORKSPACE/apps/windows/motedeck/dist/release"'
         )
         self.assertLess(archive_index, installer_index)
         self.assertIn(". ./build/portable-layout.ps1", step)
@@ -1857,7 +1857,7 @@ class WindowsCiWorkflowTests(unittest.TestCase):
         archive_index = step.index("Assert-MoteDeckPortableZip")
         final_index = step.index("$finalBuildProvenance =")
         installer_index = step.index(
-            '$releaseDir = "$env:GITHUB_WORKSPACE/apps/windows/rc003/dist/release"'
+            '$releaseDir = "$env:GITHUB_WORKSPACE/apps/windows/motedeck/dist/release"'
         )
         self.assertLess(initial_index, copy_index)
         self.assertLess(copy_index, staged_index)
@@ -1906,7 +1906,7 @@ class WindowsCiWorkflowTests(unittest.TestCase):
         # left over from a previous run can never leak into an upload.
         step = self._package_step_text()
         self.assertIn(
-            '$releaseDir = "$env:GITHUB_WORKSPACE/apps/windows/rc003/dist/release"',
+            '$releaseDir = "$env:GITHUB_WORKSPACE/apps/windows/motedeck/dist/release"',
             step,
         )
         self.assertIn(
@@ -1990,7 +1990,7 @@ class WindowsCiWorkflowTests(unittest.TestCase):
         # wildcard form (see the two tests below for why).
         upload_step = self._upload_step_text()
         self.assertIn(
-            "path: ${{ github.workspace }}/apps/windows/rc003/dist/release/*",
+            "path: ${{ github.workspace }}/apps/windows/motedeck/dist/release/*",
             upload_step,
         )
         self.assertNotIn("dist/portable/*.zip", upload_step)
@@ -2005,9 +2005,9 @@ class WindowsCiWorkflowTests(unittest.TestCase):
     def test_release_dir_is_workspace_absolute_not_working_directory_relative(self):
         # XRBM-025 red evidence: run 29643870781's upload-artifact@v7 step
         # failed "No files were found with the provided path:
-        # apps/windows/rc003/dist/release" - a working-directory-relative
+        # apps/windows/motedeck/dist/release" - a working-directory-relative
         # producer path ($releaseDir = "dist/release", resolved against
-        # the job's `apps/windows/rc003` defaults.run.working-directory)
+        # the job's `apps/windows/motedeck` defaults.run.working-directory)
         # and the upload step's own relative path input carry no
         # guarantee of resolving to the same directory. $releaseDir must
         # now be anchored on $env:GITHUB_WORKSPACE so packaging/preflight
@@ -2024,12 +2024,12 @@ class WindowsCiWorkflowTests(unittest.TestCase):
         # workspace-root variable (`$env:GITHUB_WORKSPACE` and
         # `${{ github.workspace }}` are GitHub Actions' own two spellings
         # of the identical absolute value) joined with the identical
-        # repository-relative suffix "apps/windows/rc003/dist/release" -
+        # repository-relative suffix "apps/windows/motedeck/dist/release" -
         # so producer and consumer can never again silently diverge the
         # way the relative forms did in run 29643870781.
         package_step = self._package_step_text()
         upload_step = self._upload_step_text()
-        release_suffix = "apps/windows/rc003/dist/release"
+        release_suffix = "apps/windows/motedeck/dist/release"
         self.assertIn(
             "$env:GITHUB_WORKSPACE/" + release_suffix, package_step
         )
@@ -2138,7 +2138,7 @@ class BuildProvenanceScriptTests(unittest.TestCase):
             r"Resources\RC003-remote-photo.png",
             r"THIRD_PARTY_NOTICES.md",
             r"THIRD_PARTY_SOURCE.md",
-            r".github\workflows\windows-rc003-ci.yml",
+            r".github\workflows\windows-motedeck-ci.yml",
         ):
             self.assertIn(required, self.text)
         self.assertIn('$installerRoot = Join-Path $MoteDeckRoot "installer"', self.text)
@@ -2232,7 +2232,7 @@ class BuildProvenanceScriptTests(unittest.TestCase):
                 rc003_root / "installer" / "readme-motedeck.txt": "fixture\n",
                 rc003_root / "installer" / "MoteDeckSetup.iss": "fixture\n",
                 rc003_root / "installer" / "stop-app.ps1": "fixture\n",
-                repo_root / ".github" / "workflows" / "windows-rc003-ci.yml": "fixture\n",
+                repo_root / ".github" / "workflows" / "windows-motedeck-ci.yml": "fixture\n",
                 repo_root / "README.md": "fixture\n",
                 repo_root / "Resources" / "RC003-remote-photo.png": b"png",
                 repo_root / "Resources" / "Chromecast-remote-photo.png": b"png",
@@ -3089,23 +3089,23 @@ class RootDocumentConsistencyTests(unittest.TestCase):
 
     def test_root_readme_does_not_lump_windows_in_with_planned_research(self):
         self.assertIn("小米蓝牙遥控器 2 Pro", self.root_readme_text)
-        self.assertIn("[开发者文档](apps/windows/rc003/README.md)", self.root_readme_text)
+        self.assertIn("[开发者文档](apps/windows/motedeck/README.md)", self.root_readme_text)
 
     def test_root_readme_places_the_admin_workaround_in_usage_limits(self):
         self.assertIn("按页面提示处理未就绪的项目", self.root_readme_text)
-        self.assertIn("[使用说明](apps/windows/rc003/README.md)", self.root_readme_text)
+        self.assertIn("[使用说明](apps/windows/motedeck/README.md)", self.root_readme_text)
         windows_readme = _README_PATH.read_text(encoding="utf-8")
         self.assertIn("管理员按键组件", windows_readme)
         self.assertIn("UAC", windows_readme)
 
     def test_root_readme_documents_required_configuration(self):
-        for phrase in ("CABLE Input", "CABLE Output", "语音按键", "[使用说明](apps/windows/rc003/README.md)"):
+        for phrase in ("CABLE Input", "CABLE Output", "语音按键", "[使用说明](apps/windows/motedeck/README.md)"):
             self.assertIn(phrase, self.root_readme_text)
 
     def test_third_party_notices_does_not_falsely_deny_all_vbcable_reference(self):
         # THIRD_PARTY_NOTICES.md previously claimed the Windows candidate
         # does not "reference VB-CABLE ... in any form" - false:
-        # apps/windows/rc003/README.md and installer/readme-motedeck.txt both
+        # apps/windows/motedeck/README.md and installer/readme-motedeck.txt both
         # document the official VB-Audio VB-CABLE download as an optional
         # endpoint, and (XRBM-031) the frozen build now bundles the
         # official, verified, unmodified Basic package offline for a
@@ -3209,7 +3209,7 @@ class PortableReleasePackagingReplayTests(unittest.TestCase):
                 "exit /b 0\r\n",
                 encoding="ascii",
             )
-            release = root / "apps/windows/rc003/dist/release"
+            release = root / "apps/windows/motedeck/dist/release"
             release.mkdir(parents=True)
             (release / "stale-installer.exe").write_bytes(b"stale")
             result = self._run(
@@ -3279,7 +3279,7 @@ class ApplicationUpdateDocumentationContractTests(unittest.TestCase):
     def test_manual_update_never_auto_replaces_the_running_copy(self):
         guide = _README_PATH.read_text(encoding="utf-8")
         landing = _ROOT_README_PATH.read_text(encoding="utf-8")
-        self.assertIn("[使用说明](apps/windows/rc003/README.md)", landing)
+        self.assertIn("[使用说明](apps/windows/motedeck/README.md)", landing)
         self.assertIn("检查更新", guide)
         self.assertIn("不会自动运行下载文件或覆盖当前安装", guide)
         self.assertIn("再运行新下载的安装包", guide)

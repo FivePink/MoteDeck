@@ -19,7 +19,7 @@ Issue 模板；安全漏洞按 [`SECURITY.md`](SECURITY.md) 私密报告。
 
 ## 本地开发
 
-在 Windows PowerShell 中进入 `apps/windows/rc003`（需要 Windows 10/11 与 Python 3.12）：
+在 Windows PowerShell 中进入 `apps/windows/motedeck`（需要 Windows 10/11 与 Python 3.12）：
 
 ```powershell
 py -3.12 -m venv .venv

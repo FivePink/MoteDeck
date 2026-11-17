@@ -46,8 +46,8 @@ UI Automation 扫描与界面动作回到 Qt 事件循环执行；性能继续�
 ### 3.1 测量环境
 
 - 核验日期：2026-08-29。
-- 解释器：仓库现有 `apps/windows/rc003/.venv`。
-- 源码入口：`apps/windows/rc003/src`。
+- 解释器：仓库现有 `apps/windows/motedeck/.venv`。
+- 源码入口：`apps/windows/motedeck/src`。
 - 设置窗口对象数和 QML 加载时间使用 `QT_QPA_PLATFORM=offscreen`，并用 Basic
   样式隔离真实桌面绘制差异；系统查询仍调用当前 Windows 主机的真实接口。
 - 音频写耗时和尾部通知来自会话内此前已核实的真实运行 `app.log`，不是模拟值。

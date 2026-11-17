@@ -172,9 +172,9 @@ GPL-3.0-only corresponding source and binary distribution.
 - Source: <https://github.com/nijez/open-voice-bridge>
 - License: GNU General Public License v3.0 only (`GPL-3.0-only`)
 
-The Windows RC003 implementation in `apps/windows/rc003` is adapted from the
+The Windows RC003 implementation in `apps/windows/motedeck` is adapted from the
 upstream Windows client. Attribution and local changes are summarized in
-`apps/windows/rc003/ATTRIBUTION.md`.
+`apps/windows/motedeck/ATTRIBUTION.md`.
 
 ### remote-bridge-hub
 

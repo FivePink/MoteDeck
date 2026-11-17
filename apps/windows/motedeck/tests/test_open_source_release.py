@@ -46,7 +46,7 @@ class CommunityHealthFileTests(unittest.TestCase):
     def test_dependabot_covers_python_and_github_actions(self):
         text = (REPO_ROOT / ".github/dependabot.yml").read_text(encoding="utf-8")
         self.assertIn("package-ecosystem: pip", text)
-        self.assertIn("directory: /apps/windows/rc003", text)
+        self.assertIn("directory: /apps/windows/motedeck", text)
         self.assertIn("package-ecosystem: github-actions", text)
 
 
@@ -123,7 +123,7 @@ class ThirdPartyReleaseGateTests(unittest.TestCase):
         source = (BUILD_ROOT / "check-release-readiness.py").read_text(
             encoding="utf-8"
         )
-        workflow = (REPO_ROOT / ".github/workflows/windows-rc003-ci.yml").read_text(
+        workflow = (REPO_ROOT / ".github/workflows/windows-motedeck-ci.yml").read_text(
             encoding="utf-8"
         )
         self.assertIn("_git_history_blockers", source)

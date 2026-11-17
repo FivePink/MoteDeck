@@ -50,7 +50,7 @@
     {
       "platform": "windows",
       "status": "research",
-      "notes": "A source/build candidate exists at apps/windows/rc003; real RC003 pairing, button and voice-link acceptance remains pending."
+      "notes": "A source/build candidate exists at apps/windows/motedeck; real RC003 pairing, button and voice-link acceptance remains pending."
     }
   ],
   "sources": [

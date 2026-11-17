@@ -1,4 +1,4 @@
-"""Static contract scans over apps/windows/rc003 source, mirroring (in Python,
+"""Static contract scans over apps/windows/motedeck source, mirroring (in Python,
 so it runs cross-platform in CI) the checks build/check-public-boundary.ps1
 performs at build time.
 
@@ -294,7 +294,7 @@ class NoBinariesCommittedTests(unittest.TestCase):
         rc003_root = _PACKAGE_ROOT.parents[1]
         repository_root = rc003_root.parents[2]
         tracked = subprocess.run(
-            ["git", "ls-files", "--", "apps/windows/rc003"],
+            ["git", "ls-files", "--", "apps/windows/motedeck"],
             cwd=repository_root,
             check=True,
             capture_output=True,

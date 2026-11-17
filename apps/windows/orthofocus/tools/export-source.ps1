@@ -10,8 +10,8 @@ $ErrorActionPreference = "Stop"
 $templateRoot = Split-Path -Parent $PSScriptRoot
 $windowsRoot = Split-Path -Parent $templateRoot
 $repositoryRoot = Resolve-Path (Join-Path $windowsRoot "..\..")
-$sourceRoot = Resolve-Path (Join-Path $windowsRoot "rc003\scripts")
-$testRoot = Resolve-Path (Join-Path $windowsRoot "rc003\tests")
+$sourceRoot = Resolve-Path (Join-Path $windowsRoot "motedeck\scripts")
+$testRoot = Resolve-Path (Join-Path $windowsRoot "motedeck\tests")
 $destinationPath = if ([System.IO.Path]::IsPathRooted($Destination)) {
     [System.IO.Path]::GetFullPath($Destination)
 } else {

@@ -85,7 +85,7 @@ def _candidate_paths(profile: str = "xiaomi-rc003") -> Iterator[Path]:
     # Unfrozen packaged build (e.g. launched with CWD already set to the
     # dist folder): PyInstaller spec copies the photo next to the exe.
     yield Path("Resources") / filename
-    # Source checkout: apps/windows/rc003/src/motedeck/resources.py -> repo root.
+    # Source checkout: apps/windows/motedeck/src/motedeck/resources.py -> repo root.
     yield _source_resource_root() / "Resources" / filename
 
 
@@ -101,7 +101,7 @@ def _device_profile_directory_candidates() -> Iterator[Path]:
     if frozen_root:
         yield Path(frozen_root) / _DEVICE_PROFILES_DIRECTORY
         return
-    # Source checkout: apps/windows/rc003/src/motedeck/resources.py -> repo root.
+    # Source checkout: apps/windows/motedeck/src/motedeck/resources.py -> repo root.
     yield _source_resource_root() / _DEVICE_PROFILES_DIRECTORY
 
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Runs every test in apps/windows/rc003/tests that can run on this machine.
+# Runs every test in apps/windows/motedeck/tests that can run on this machine.
 #
 # On non-Windows hosts this exercises all pure-Python protocol/identity/config
 # helper/privacy-contract/build-artifact tests; the Windows-only tests in

@@ -5,7 +5,7 @@ version: 2
 # security updates）由仓库设置单独控制，不受这里影响。
 updates:
   - package-ecosystem: pip
-    directory: /apps/windows/rc003
+    directory: /apps/windows/motedeck
     schedule:
       interval: weekly
       day: monday

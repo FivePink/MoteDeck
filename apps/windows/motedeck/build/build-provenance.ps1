@@ -371,7 +371,7 @@ function Get-MoteDeckBuildInputFiles {
         (Join-Path $MoteDeckRoot "scripts\spatial_navigation_core.py"),
         (Join-Path $MoteDeckRoot "ATTRIBUTION.md"),
         (Join-Path $MoteDeckRoot "README.md"),
-        (Join-Path $RepoRoot ".github\workflows\windows-rc003-ci.yml"),
+        (Join-Path $RepoRoot ".github\workflows\windows-motedeck-ci.yml"),
         (Join-Path $RepoRoot "README.md"),
         (Join-Path $RepoRoot "Resources\RC003-remote-photo.png"),
         (Join-Path $RepoRoot "Resources\Chromecast-remote-photo.png"),

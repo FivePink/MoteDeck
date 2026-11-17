@@ -66,7 +66,7 @@ Item {
     function aiHelpPromptText() {
         return [
             qsTr("你好，请帮我排查 MoteDeck（小米或谷歌蓝牙遥控器的 Windows 客户端）无法正常接收遥控器按键的问题。"),
-            qsTr("项目仓库在 GitHub：https://github.com/HZDavy/MoteDeck（PySide6/QML 桌面应用，rc003 客户端核心逻辑在 apps/windows/rc003/src/motedeck 目录，含后台服务 bridge 和按键注入模块）。本机是安装版、没有源码；如果日志指向代码问题，请给出结论和日志证据（时间+关键行），我来转给开发者，不要让我改代码。"),
+            qsTr("项目仓库在 GitHub：https://github.com/HZDavy/MoteDeck（PySide6/QML 桌面应用，客户端核心逻辑在 apps/windows/motedeck/src/motedeck 目录，含后台服务 bridge 和按键注入模块）。本机是安装版、没有源码；如果日志指向代码问题，请给出结论和日志证据（时间+关键行），我来转给开发者，不要让我改代码。"),
             qsTr("应用版本：" + SettingsController.applicationVersion + "；当前设备：" + SettingsController.activeRemoteLabel + "（型号由软件按蓝牙广播名/GATT 型号串实际读取，分不清时由我手选，可能与实物不符）。"),
             qsTr("当前状态快照：界面显示=" + currentDeviceStateText()
                 + "；服务进程运行=" + SettingsController.bridgeRunning

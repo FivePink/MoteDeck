@@ -39,7 +39,7 @@ jobs:
           version = tag[1:] if tag.startswith("v") else tag
           if not version:
               version = pathlib.Path(
-                  "apps/windows/rc003/src/motedeck/VERSION"
+                  "apps/windows/motedeck/src/motedeck/VERSION"
               ).read_text(encoding="ascii").strip()
           if not re.fullmatch(r"\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?", version):
               sys.exit(f"unsupported version: {version!r}")

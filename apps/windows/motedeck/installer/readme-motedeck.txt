@@ -4,7 +4,7 @@ MoteDeck 安装版
 安装包是 MoteDeck 的主要分发方式：按用户安装、自动创建开始菜单和桌面快捷方式，
 并注册标准卸载入口（Windows 设置 → 应用 → MoteDeck → 卸载）。
 
-当前能力和使用步骤以项目首页及 apps/windows/rc003/README.md 为准；不要据本文件
+当前能力和使用步骤以项目首页及 apps/windows/motedeck/README.md 为准；不要据本文件
 的历史验收描述认定新源码或旧公开包包含全部修复。
 
 系统要求
@@ -220,7 +220,7 @@ logs\app.log 和 logs\hid-helper.log 会一直保留在
   令牌；
 - 本候选是基于 GPL-3.0-only 上游 Windows 实现持续维护的派生版本；文件级别
   的来源与本地修改记录见项目仓库的
-  apps/windows/rc003/ATTRIBUTION.md，项目整体改编声明见仓库根目录的
+  apps/windows/motedeck/ATTRIBUTION.md，项目整体改编声明见仓库根目录的
   COPYRIGHT 与 THIRD_PARTY_NOTICES.md（安装目录下也附带了这两份文件的
   副本）。
 

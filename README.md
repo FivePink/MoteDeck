@@ -26,7 +26,7 @@ MoteDeck 是一个以遥控器语音控制电脑为核心的 Windows 工具，�
 
 程序全部在本机运行，不上传遥控器地址、按键记录、录音或个人数据。
 
-本项目是基于 GPL-3.0 的 [`nijez/open-voice-bridge`](https://github.com/nijez/open-voice-bridge) Windows 实现的改造版本（Windows 实现的历史仓库为 [`ZSTDJan/windows-remote-mic-app`](https://github.com/ZSTDJan/windows-remote-mic-app)）；上游归属、改动范围与 GPL-3.0 §5(a) 修改声明见 [ATTRIBUTION.md](apps/windows/rc003/ATTRIBUTION.md)；其余第三方组件与上游项目的说明详见[致谢](#上游致谢)。
+本项目是基于 GPL-3.0 的 [`nijez/open-voice-bridge`](https://github.com/nijez/open-voice-bridge) Windows 实现的改造版本（Windows 实现的历史仓库为 [`ZSTDJan/windows-remote-mic-app`](https://github.com/ZSTDJan/windows-remote-mic-app)）；上游归属、改动范围与 GPL-3.0 §5(a) 修改声明见 [ATTRIBUTION.md](apps/windows/motedeck/ATTRIBUTION.md)；其余第三方组件与上游项目的说明详见[致谢](#上游致谢)。
 
 ---
 
@@ -121,7 +121,7 @@ Vokie 原生支持外接语音设备，MoteDeck 按它的插件协议做了适�
 - 系统要求：64 位 Windows 10 1809 或更高版本。
 - 双击安装包按提示安装，默认装到 `%LOCALAPPDATA%\MoteDeck`，并创建开始菜单与桌面快捷方式；之后从 Windows 设置 → 应用 → MoteDeck 卸载。
 - 程序未签名，Windows 首次运行可能弹出 SmartScreen 提示，选择“更多信息 → 仍要运行”。请只从本仓库或官网下载。
-- 完整的使用说明见 [使用说明](apps/windows/rc003/README.md)。
+- 完整的使用说明见 [使用说明](apps/windows/motedeck/README.md)。
 
 ---
 
@@ -154,14 +154,14 @@ Vokie 原生支持外接语音设备，MoteDeck 按它的插件协议做了适�
 需要 Python 3.12（Windows x64）。
 
 ```powershell
-Set-Location apps/windows/rc003
+Set-Location apps/windows/motedeck
 py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
 $env:PYTHONPATH = Join-Path (Get-Location) 'src'
 .\.venv\Scripts\python.exe -m motedeck --settings
 ```
 
-构建、测试和发布流程见 [开发者文档](apps/windows/rc003/README.md)。
+构建、测试和发布流程见 [开发者文档](apps/windows/motedeck/README.md)。
 
 ---
 
@@ -251,7 +251,7 @@ MoteDeck 由 Mote（远程、轻巧）和 Deck（控制面板）组成。
 <details>
 <summary>开发与技术资料</summary>
 
-- Windows 客户端的运行、构建与技术说明：[开发者文档](apps/windows/rc003/README.md)
+- Windows 客户端的运行、构建与技术说明：[开发者文档](apps/windows/motedeck/README.md)
 - 元素导航的独立项目 OrthoFocus：[项目说明](apps/windows/orthofocus/README.md)
 
 </details>
@@ -260,7 +260,7 @@ MoteDeck 由 Mote（远程、轻巧）和 Deck（控制面板）组成。
 
 ## 上游致谢
 
-Windows RC003 客户端在 GPL-3.0 条件下基于 [`nijez/open-voice-bridge`](https://github.com/nijez/open-voice-bridge) 改造，Windows 实现的历史仓库为 [`ZSTDJan/windows-remote-mic-app`](https://github.com/ZSTDJan/windows-remote-mic-app)。感谢原作者的贡献，完整归属说明见 [ATTRIBUTION.md](apps/windows/rc003/ATTRIBUTION.md)。
+Windows 客户端（MoteDeck）在 GPL-3.0 条件下基于 [`nijez/open-voice-bridge`](https://github.com/nijez/open-voice-bridge) 改造，Windows 实现的历史仓库为 [`ZSTDJan/windows-remote-mic-app`](https://github.com/ZSTDJan/windows-remote-mic-app)。感谢原作者的贡献，完整归属说明见 [ATTRIBUTION.md](apps/windows/motedeck/ATTRIBUTION.md)。
 
 小米蓝牙遥控器 2（RC001）的实现，以及小米蓝牙遥控器 2 / 2 Pro 的型号判断（先按蓝牙名匹配，再读 GATT `0x2A24`），参考了 [`GetSayAll/remote-mic-app-windows`](https://github.com/GetSayAll/remote-mic-app-windows)（SayAll Windows 版），由 [Echo](https://github.com/HD838A) 提交（PR #7）。感谢他的公开实现。
 

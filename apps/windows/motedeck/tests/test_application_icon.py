@@ -211,7 +211,7 @@ class ApplicationIconTests(unittest.TestCase):
             _RC003_ROOT.parents[2]
             / ".github"
             / "workflows"
-            / "windows-rc003-ci.yml"
+            / "windows-motedeck-ci.yml"
         ).read_text(encoding="utf-8")
 
         self.assertIn("generate-app-icon.py", local_build)

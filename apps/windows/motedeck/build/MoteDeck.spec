@@ -73,7 +73,7 @@ if NATIVE_STAGE:
     ELEMENT_NAVIGATION_SOURCE_DIR = SRC_ROOT.parent / "scripts"
 DEVICE_PROFILES_DIR = REPO_ROOT / "device-profiles"
 # XRBM-031: build/fetch-vb-cable.ps1 (a REQUIRED step in both
-# build-candidate.ps1 and windows-rc003-ci.yml, run before this spec) writes
+# build-candidate.ps1 and windows-motedeck-ci.yml, run before this spec) writes
 # the hash-verified official VB-CABLE base package here. Bundled unmodified
 # as application data (never re-verified/re-hashed at build time - only at
 # RUNTIME, independently, by vb_cable_bundle.verify_bundle() before any
@@ -268,7 +268,7 @@ if VB_CABLE_BUNDLE_ZIP.is_file():
     # sys._MEIPASS-relative reasoning as the photo/qml entries above. A
     # missing file here (e.g. a local `pyinstaller` invocation that skipped
     # fetch-vb-cable.ps1) is not a spec-time error - build-candidate.ps1 and
-    # windows-rc003-ci.yml are what make fetching it a REQUIRED gate before
+    # windows-motedeck-ci.yml are what make fetching it a REQUIRED gate before
     # this spec ever runs for a real candidate build; this spec itself stays
     # defensive/optional, matching the existing photo/qml pattern above.
     datas.append((str(VB_CABLE_BUNDLE_ZIP), "vb_cable_bundle"))

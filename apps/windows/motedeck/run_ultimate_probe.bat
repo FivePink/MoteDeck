@@ -11,7 +11,7 @@ echo.
 
 if not exist ".venv\Scripts\python.exe" (
     echo [ERROR] .venv\Scripts\python.exe not found.
-    echo Create .venv in the rc003 folder and install requirements.txt first.
+    echo Create .venv in the motedeck folder and install requirements.txt first.
     echo.
     pause
     exit /b 1

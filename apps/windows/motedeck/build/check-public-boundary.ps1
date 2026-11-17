@@ -1,7 +1,7 @@
 #requires -Version 5.1
 <#
 .SYNOPSIS
-    Scans apps/windows/rc003 for content that must never ship in this public,
+    Scans apps/windows/motedeck for content that must never ship in this public,
     GPL-3.0-only candidate: committed third-party binaries, real Bluetooth
     addresses, personal absolute paths, credentials, forbidden branding, and
     admin-elevation/autostart markers.

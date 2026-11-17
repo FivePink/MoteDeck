@@ -7,7 +7,7 @@
 此处记录代码和仓库沿革，具体第三方代码与许可见下文及仓库根目录的
 [`THIRD_PARTY_NOTICES.md`](../../../THIRD_PARTY_NOTICES.md)。
 
-本目录中的 Windows RC003 客户端基于以下 GPL-3.0-only 项目改造：
+本目录中的 Windows 客户端（MoteDeck）基于以下 GPL-3.0-only 项目改造：
 
 - 上游项目：[`nijez/open-voice-bridge`](https://github.com/nijez/open-voice-bridge)
 - 上游 Windows 实现：`apps/windows/rc003/`，历史仓库
@@ -33,7 +33,7 @@ GPL 许可适用于本目录中的派生代码，
 
 ## 修改声明（GPL-3.0 §5(a)）
 
-本目录的 Windows RC003 客户端是上游项目的**修改版本**，按 GPL-3.0 第 5(a) 条声明如下：
+本目录的 Windows 客户端（MoteDeck）是上游项目的**修改版本**，按 GPL-3.0 第 5(a) 条声明如下：
 
 - 修改方：MoteDeck 项目维护者（HZDavy），修改后仓库为
   [`HZDavy/MoteDeck`](https://github.com/HZDavy/MoteDeck)。

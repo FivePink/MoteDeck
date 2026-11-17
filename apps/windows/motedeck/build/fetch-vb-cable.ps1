@@ -5,7 +5,7 @@
     (VBCABLE_Driver_Pack45.zip) over HTTPS and verifies its SHA-256 against
     the same pin recorded in src/motedeck/vb_cable_bundle.py's
     VB_CABLE_PACK45 constant, BEFORE
-    build-candidate.ps1/windows-rc003-ci.yml ever hand it to PyInstaller.
+    build-candidate.ps1/windows-motedeck-ci.yml ever hand it to PyInstaller.
 
     This is a REQUIRED step for both the local candidate build and Windows
     CI (XRBM-031 In-scope item 8) - unlike build/fetch-frida-gadget.ps1

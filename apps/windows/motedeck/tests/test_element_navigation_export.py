@@ -27,7 +27,7 @@ class ElementNavigationExportTests(unittest.TestCase):
         template = repository / "apps" / "windows" / "orthofocus"
         (template / "tools").mkdir(parents=True)
         for directory in ("scripts", "tests"):
-            (repository / "apps" / "windows" / "rc003" / directory).mkdir(parents=True)
+            (repository / "apps" / "windows" / "motedeck" / directory).mkdir(parents=True)
         script = template / "tools" / EXPORT_SCRIPT.name
         shutil.copyfile(EXPORT_SCRIPT, script)
         sentinel = repository / "keep-source.txt"
@@ -104,7 +104,7 @@ class ElementNavigationExportTests(unittest.TestCase):
             external.mkdir()
             external_sentinel = external / "keep-source.txt"
             external_sentinel.write_text("external source", encoding="utf-8")
-            source_link = repository / "apps" / "windows" / "rc003" / "scripts"
+            source_link = repository / "apps" / "windows" / "motedeck" / "scripts"
             os.rmdir(source_link)  # Fixture creates this as an empty directory.
             subprocess.run(["cmd", "/c", "mklink", "/J", str(source_link), str(external)],
                            check=True, capture_output=True)

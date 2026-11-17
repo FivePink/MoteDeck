@@ -529,7 +529,7 @@ def _release_qt_classes_cache() -> None:
     that same cycle cleanly; the identical cycle left for ``Py_FinalizeEx``'s
     own final collection pass instead prints
     ``ResourceWarning: gc: N uncollectable objects at shutdown`` - a
-    substring this project's ``windows-rc003-ci.yml`` test-suite step
+    substring this project's ``windows-motedeck-ci.yml`` test-suite step
     explicitly greps for and fails the build on (see
     tests/test_qt_lifecycle_cleanup.py for the subprocess-based regression
     proving this exact command stays clean).

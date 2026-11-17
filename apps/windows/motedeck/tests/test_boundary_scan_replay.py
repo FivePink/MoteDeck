@@ -1,5 +1,5 @@
 """Replays build/check-public-boundary.ps1's exact scanning algorithm in
-Python, against the real apps/windows/rc003 tree, so its scoping/allowlist
+Python, against the real apps/windows/motedeck tree, so its scoping/allowlist
 logic (see XRBM-014 review RETRY P1 #8) is covered by an automated test that
 runs on any OS - not just when a real Windows/PowerShell runner exercises
 the .ps1 script itself.

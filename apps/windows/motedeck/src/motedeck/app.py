@@ -1,4 +1,4 @@
-"""Entry point wiring: connects the pieces into a running RC003 client.
+"""Entry point wiring: connects the pieces into a running MoteDeck client.
 
 Windows-only end-to-end (BLE via winrt, HID via Raw Input, key injection via
 SendInput). NOT exercised against real hardware in this candidate - no
