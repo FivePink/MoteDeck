@@ -54,8 +54,6 @@ MoteDeck 是一个以遥控器语音控制电脑为核心的 Windows 工具，�
   <img src="docs/screenshots/voice-keys.png" width="49%" alt="语音键配置：可调整顺序、单独停用多个语音键">
 </p>
 
-<img src="docs/screenshots/device-troubleshoot.png" width="100%" alt="设备页的求助 AI：一键复制排查提示词，交给任意 AI 助手协助排查按键问题">
-
 ---
 
 ## 能做什么
