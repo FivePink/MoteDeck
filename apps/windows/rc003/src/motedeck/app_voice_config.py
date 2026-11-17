@@ -191,11 +191,10 @@ class VoiceConfigMixin:
         loop.call_soon_threadsafe(self._sync_openmexia_profile_for_slot, slot)
 
     def _sync_openmexia_profile_for_slot(self, slot: Optional[int]) -> None:
-        """语音键切到 OpenMexia 那条时，临时换成它的应用配置。
+        """语音键切到 OpenMexia 那条时，整套换成它的应用配置。
 
-        只有那一条语音键会触发：切到别的语音键不再换，前台进程一变化，
-        原有的进程级覆盖也会自己退回全局，所以日常的全局和别的软件配置
-        不会被它挤占。
+        OpenMexia 这条配置只跟语音键走：切到它就换上并一直保持，切回别的
+        语音键才退回全局；不依赖前台进程，OpenMexia 收到托盘也照常生效。
         """
 
         if not self._accept_input_events or slot is None:
@@ -210,23 +209,25 @@ class VoiceConfigMixin:
         except Exception:  # noqa: BLE001 - 配置读不出来就当没有
             return
         if not uses_openmexia:
-            # 切回普通语音键时，把上次为 OpenMexia 临时换上的那套退回去。
+            # 切回普通语音键时，把上次为 OpenMexia 换上的那套退回去。
             if not self._openmexia_profile_override:
                 return
             self._openmexia_profile_override = False
+            self._openmexia_profile_id = None
             if app_entry is None or self._preset_override_id != app_entry["id"]:
                 return
             with self._button_mapping_lock:
                 self._reset_preset_override_locked()
             self._preset_manual_foreground = None
             return
-        if app_entry is None or self._preset_override_id == app_entry["id"]:
+        if app_entry is None:
             return
-        self._apply_preset_override(app_entry["id"])
-        self._remember_applied_profile(app_entry["id"])
+        self._openmexia_profile_id = app_entry["id"]
         self._openmexia_profile_override = True
-        # 像快捷键手动切换一样把当前前台钉住，避免下一次轮询立刻又切走。
-        self._preset_manual_foreground = self._preset_switch_foreground
+        if self._preset_override_id != app_entry["id"]:
+            # 语音会话正忙时换不上，交给下一轮轮询继续补。
+            if self._apply_preset_override(app_entry["id"]):
+                self._remember_applied_profile(app_entry["id"])
 
     def _voice_slot_uses_local_microphone(self, slot: Optional[int]) -> bool:
         """Whether one voice key takes its audio from this PC's microphone."""

@@ -8,6 +8,7 @@ import asyncio
 from . import config
 from . import hotkey
 import os
+from . import openmexia_client
 from . import preset_switch_windows
 from . import voice_controller
 from . import voice_interaction_diagnostics_windows
@@ -263,6 +264,16 @@ class SettingsPresetsMixin:
             # A manual switch holds only while the foreground process is
             # unchanged; moving to another window resumes process-scope again.
             self._preset_manual_foreground = None
+        if self._openmexia_profile_override:
+            # OpenMexia 这条配置只跟语音键走：切到那条语音键就一直保持，
+            # 不随前台应用变化，收到托盘也不受影响。
+            identity = self._openmexia_profile_id
+            if identity is not None and self._preset_override_id != identity:
+                self._apply_preset_override(identity)
+            self._remember_applied_profile(
+                self._preset_override_id or app_profiles.GLOBAL_ID
+            )
+            return
         if self._preset_manual_foreground is not None:
             return
         target = process_targets.get(foreground) if foreground else None
@@ -280,16 +291,21 @@ class SettingsPresetsMixin:
         )
 
     def _preset_app_targets(self) -> dict:
-        """Map each app profile's process basename to its identity."""
+        """Map each app profile's process basename to its identity.
+
+        OpenMexia 那条是语音键专用的整套映射，只由语音键切换触发，不参与
+        前台进程的自动匹配。
+        """
 
         try:
             entries = self._preset_store.list_apps()
         except Exception:  # noqa: BLE001 - unreadable profiles never break input
             return {}
+        openmexia_process = openmexia_client.PROCESS_NAME.strip().casefold()
         result: dict = {}
         for entry in entries:
             process = entry["process"].strip().casefold()
-            if process:
+            if process and process != openmexia_process:
                 result.setdefault(process, entry["id"])
         return result
 
@@ -509,6 +525,8 @@ class SettingsPresetsMixin:
                 # is applied persistently, exactly like the settings window.
                 self._preset_override_id = None
                 self._preset_base_bindings = None
+                self._openmexia_profile_override = False
+                self._openmexia_profile_id = None
                 if self._voice_settings_idle_locked():
                     self._pending_config = None
                     self._pending_voice_settings = None

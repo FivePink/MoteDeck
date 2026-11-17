@@ -25,7 +25,7 @@ PROTOCOL_VERSION = 1
 DISCOVERY_FILE_NAME = "mote-deck.json"
 OPENMEXIA_APP_DIR = "OpenMexia"
 REQUEST_TIMEOUT_SECONDS = 3.0
-# 连接后自动加的那条软件配置：名字显示在软件栏，进程名让它前台时也能对上。
+# 连接后自动加的那条软件配置：名字显示在软件栏，由语音键切换到它时整套换上。
 APP_PROFILE_NAME = "OpenMexia"
 PROCESS_NAME = "openmexia.exe"
 

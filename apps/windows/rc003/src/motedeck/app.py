@@ -241,8 +241,9 @@ class RC003App(
         self._preset_switch_foreground = ""
         # OpenMexia 设备动作的网络请求都在这个后台线程里排队执行。
         self._openmexia_runner = openmexia_client.OpenMexiaRunner()
-        # 当前这套映射是不是被 OpenMexia 语音键临时换上的（用来在切走时退回）。
+        # 当前这套映射是不是被 OpenMexia 语音键换上的（用来在切走时退回）。
         self._openmexia_profile_override = False
+        self._openmexia_profile_id: Optional[str] = None
         self._preset_switch_task: Optional[asyncio.Task] = None
         self._preset_hotkey_listener: Optional[
             preset_switch_windows.PresetSwitchListener
