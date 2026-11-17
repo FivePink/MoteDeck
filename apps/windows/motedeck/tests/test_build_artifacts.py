@@ -3089,7 +3089,7 @@ class RootDocumentConsistencyTests(unittest.TestCase):
 
     def test_root_readme_does_not_lump_windows_in_with_planned_research(self):
         self.assertIn("小米蓝牙遥控器 2 Pro", self.root_readme_text)
-        self.assertIn("[开发者文档](apps/windows/motedeck/README.md)", self.root_readme_text)
+        self.assertIn("[开发文档](apps/windows/motedeck/DEVELOPMENT.md)", self.root_readme_text)
 
     def test_root_readme_places_the_admin_workaround_in_usage_limits(self):
         self.assertIn("按页面提示处理未就绪的项目", self.root_readme_text)

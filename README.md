@@ -161,7 +161,7 @@ $env:PYTHONPATH = Join-Path (Get-Location) 'src'
 .\.venv\Scripts\python.exe -m motedeck --settings
 ```
 
-构建、测试和发布流程见 [开发者文档](apps/windows/motedeck/README.md)。
+构建、测试和发布流程见 [开发文档](apps/windows/motedeck/DEVELOPMENT.md)。
 
 ---
 
@@ -251,7 +251,7 @@ MoteDeck 由 Mote（远程、轻巧）和 Deck（控制面板）组成。
 <details>
 <summary>开发与技术资料</summary>
 
-- Windows 客户端的运行、构建与技术说明：[开发者文档](apps/windows/motedeck/README.md)
+- Windows 客户端的运行、构建与技术说明：[开发文档](apps/windows/motedeck/DEVELOPMENT.md)
 - 元素导航的独立项目 OrthoFocus：[项目说明](apps/windows/orthofocus/README.md)
 
 </details>

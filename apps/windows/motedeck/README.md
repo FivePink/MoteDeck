@@ -225,70 +225,7 @@ VB-CABLE 是 VB-Audio 的独立 Donationware。代码与第三方说明见
 [`THIRD_PARTY_NOTICES.md`](../../../THIRD_PARTY_NOTICES.md) 和
 [`ASSET_LICENSES.md`](../../../ASSET_LICENSES.md)。
 
-<details>
-<summary>源码运行与维护入口</summary>
+## 开发与维护
 
-源码开发只沿公开 `main` 继续，版本序号连续递增。开始最新正式版任务前，先核实
-GitHub 当前正式 Release、远端 `main` 与当前源码版本，不使用旧版开发分支或旧源码工作区。
-桌面的“MoteDeck 开发版”只从正式主目录运行 `.\build\install-dev-shortcut.ps1`
-创建或更新，并核对快捷方式的目标、工作目录和打开窗口显示的版本。
+构建、测试、发布与日志分析流程见 [DEVELOPMENT.md](DEVELOPMENT.md)。
 
-双击开发版后，小米服务会按需为短命后台进程申请管理员权限；出现 Windows 授权提示时确认即可，
-无需用管理员方式打开整个界面。若取消或未取得权限，设备页会显示“重新授权”，点击后再次申请；
-不会自动循环申请或反复要求重启服务。
-
-当前构建目录保留的旧版正式包副本仅供本机使用，
-不属于源码或新构建结果，不纳入 Git，也不重新上传；后续正式包替代后移除此副本。
-
-在本目录的 Windows PowerShell 中运行：
-
-```powershell
-py -3.12 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
-$env:PYTHONPATH = Join-Path (Get-Location) 'src'
-.\.venv\Scripts\python.exe -m motedeck --settings
-```
-
-运行测试：
-
-```powershell
-$env:PYTHONPATH = Join-Path (Get-Location) 'src'
-.\.venv\Scripts\python.exe -m unittest discover -s tests -t . -p 'test_*.py' -v
-```
-
-分析用户日志前，在开发机运行只读核对入口：
-
-```powershell
-.\.venv\Scripts\python.exe -B .\scripts\audit_log_bundle.py '日志包的完整路径.zip'
-```
-
-该工具核对整个 ZIP 的文件清单与完整性，默认优先输出最近一轮的候选范围、相关运行、
-跨文件阅读位置和历史摘要；只有添加 `--all-history` 才展开完整历史索引。
-已有反馈时间时使用 `--since '2026-09-28T22:50:00' --until '2026-09-28T23:00:00'`；
-还可用 `--version` 指定完整程序版本、`--device` 指定设备短编号。无时区时间按日志当地时间，
-带时区时间按导出清单的时区换算，清单缺失时不猜时区。与窗口重叠的运行保留完整起止及
-启动、退出上下文，并补齐同一候选轮次的前后重试。原窗口、窗口内运行和补出的运行分别列出，
-扩大范围明确标为推定；不同版本、已知不同设备或间隔超过 30 分钟的运行不自动并入。
-设备关联只取运行开始前、同次程序启动内的同版本记录；启动边界允许 1 毫秒的格式精度差异，
-运行开始后没有时间容差。关联仍是线索，不能冒充运行直接确认的身份；没有匹配记录、设备
-无法绑定或上下文含其它运行时明确提示。按设备筛选时，较新但归属未知的运行仍保留，
-不会因邻近运行属于其它设备而被排除；筛选结果早于最新运行时明确提醒旧范围。
-未指定时间时，按相同版本、设备线索及运行间隔不超过 30 分钟提出最近连续运行的候选范围；
-该间隔只是定位规则，输出始终标明“推定”，不能当成用户确认，也不能据此跳过相关前因。
-阅读时先核实本次范围，再读完整相关过程；旧记录按需回查，整包核对不等于重读全部历史。
-工具不会自动判定根因，也不要求用户运行。输出包含诊断元数据，只在开发机临时使用；需要
-保存时放到仓库已忽略的 `.build/log-audit/`，可随时清理。
-脚本随源码维护，不进入程序打包入口；不解压、不改用户文件或设备。
-
-构建候选目录：
-
-```powershell
-.\build\build-candidate.ps1
-```
-
-维护资料：
-
-- [性能记录](PERFORMANCE.md)
-- [版本历史](CHANGELOG.md)
-
-</details>
