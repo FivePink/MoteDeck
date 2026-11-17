@@ -977,7 +977,7 @@ def run_settings_window(
             root_window
         )
 
-        def update_native_window_icon() -> None:
+        def update_native_window_icon(force: bool = False) -> None:
             path = resources.find_window_icon(
                 classic=controller.brandIconMode == 1
             )
@@ -989,14 +989,18 @@ def run_settings_window(
             )
             # 安装器快捷方式的图标固定指向 {app}\MoteDeck.ico，同步替换，
             # 桌面和开始菜单才会跟窗口/托盘一起换（开发版自动跳过）。
+            # 主动切换时强制刷新一次，清掉资源管理器缓存的历史图标。
             window_chrome_windows.sync_installed_shortcut_icon(
                 sys.executable,
                 str(path),
+                force=force,
             )
 
         update_native_window_icon()
         controller.brandIconModeChanged.connect(update_application_icon)
-        controller.brandIconModeChanged.connect(update_native_window_icon)
+        controller.brandIconModeChanged.connect(
+            lambda: update_native_window_icon(force=True)
+        )
 
         # The real QML window and full-exit signal are ready here. Publish the
         # capability before optional element navigation startup, whose bounded

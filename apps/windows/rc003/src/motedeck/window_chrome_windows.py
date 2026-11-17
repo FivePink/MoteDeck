@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import ctypes
 from ctypes import wintypes
+import os
 from pathlib import Path
+import subprocess
 import sys
 from typing import Callable, Optional
 
@@ -92,6 +94,10 @@ _LR_LOADFROMFILE = 0x00000010
 _LR_DEFAULTSIZE = 0x00000040
 _GCLP_HICON = -14
 _GCLP_HICONSM = -34
+_SHCNE_UPDATEITEM = 0x00002000
+_SHCNE_ASSOCCHANGED = 0x08000000
+_SHCNF_PATHW = 0x0005
+_CREATE_NO_WINDOW = 0x08000000
 _DWMWA_WINDOW_CORNER_PREFERENCE = 33
 _DWMWA_USE_IMMERSIVE_DARK_MODE = 20
 _MONITOR_DEFAULTTONEAREST = 2
@@ -207,9 +213,86 @@ def apply_native_window_icon(
                 wintypes.WPARAM(icon_type),
                 wintypes.LPARAM(handle),
             )
+            # 任务栏 / Alt+Tab 有时读的是窗口类图标（GCLP_HICON*），
+            # 只改窗口图标的实例会留下旧图标，这里一并换掉。
+            try:
+                user32.SetClassLongPtrW.argtypes = (
+                    wintypes.HWND,
+                    ctypes.c_int,
+                    ctypes.c_size_t,
+                )
+                user32.SetClassLongPtrW.restype = ctypes.c_size_t
+                user32.SetClassLongPtrW(
+                    hwnd,
+                    _GCLP_HICON if icon_type == _ICON_BIG else _GCLP_HICONSM,
+                    handle,
+                )
+            except AttributeError:
+                pass
     except (AttributeError, OSError, TypeError, ValueError):
         return False
     return True
+
+
+def _shortcut_locations() -> list[Path]:
+    """桌面、开始菜单和任务栏固定区里可能放快捷方式的目录。"""
+
+    roots: list[Path] = []
+    for env, parts in (
+        ("USERPROFILE", ("Desktop",)),
+        ("PUBLIC", ("Desktop",)),
+        ("APPDATA", ("Microsoft", "Windows", "Start Menu", "Programs")),
+        ("APPDATA", ("Microsoft", "Internet Explorer", "Quick Launch", "User Pinned", "TaskBar")),
+    ):
+        base = os.environ.get(env)
+        if base:
+            roots.append(Path(base).joinpath(*parts))
+    return roots
+
+
+def _motedeck_shortcuts() -> list[Path]:
+    shortcuts: list[Path] = []
+    for root in _shortcut_locations():
+        if not root.is_dir():
+            continue
+        try:
+            shortcuts.extend(root.rglob("MoteDeck*.lnk"))
+        except OSError:
+            continue
+    return shortcuts
+
+
+def _refresh_shell_icons() -> None:
+    """让资源管理器重新读快捷方式图标，并重建图标缓存。"""
+
+    shell32 = ctypes.windll.shell32
+    for shortcut in _motedeck_shortcuts():
+        try:
+            # 更新时间戳，让按文件缓存的图标失效。
+            os.utime(shortcut, None)
+        except OSError:
+            continue
+        try:
+            shell32.SHChangeNotify(
+                _SHCNE_UPDATEITEM, _SHCNF_PATHW, str(shortcut), None
+            )
+        except OSError:
+            continue
+    try:
+        shell32.SHChangeNotify(_SHCNE_ASSOCCHANGED, 0, None, None)
+    except OSError:
+        pass
+    try:
+        # ie4uinit -show：重建系统图标缓存（Win10/11 上只发
+        # SHCNE_ASSOCCHANGED 经常刷不掉旧图标）。不显示窗口、不等待。
+        subprocess.Popen(
+            ["ie4uinit.exe", "-show"],
+            creationflags=_CREATE_NO_WINDOW,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except OSError:
+        pass
 
 
 def sync_installed_shortcut_icon(
@@ -217,12 +300,14 @@ def sync_installed_shortcut_icon(
     icon_path: str,
     *,
     platform: Optional[str] = None,
+    force: bool = False,
 ) -> bool:
     """让安装目录里的 MoteDeck.ico 跟随当前品牌图标。
 
     安装器建的桌面/开始菜单快捷方式把图标固定指向 ``{app}\\MoteDeck.ico``，
     只换窗口和托盘的话快捷方式仍显示旧图标。这里把该文件替换成当前品牌
-    的 ico 并广播一次图标缓存刷新，桌面、开始菜单和任务栏就一致了。
+    的 ico，并把桌面、开始菜单、任务栏固定的快捷方式逐个通知资源管理器
+    刷新（``force`` 时即使内容没变也刷一次，用来清掉历史缓存）。
     开发版/便携版没有这个文件，直接跳过。
     """
 
@@ -235,13 +320,13 @@ def sync_installed_shortcut_icon(
         return False
     try:
         data = Path(icon_path).read_bytes()
-        if target.read_bytes() == data:
+        if target.read_bytes() != data:
+            target.write_bytes(data)
+        elif not force:
             return True
-        target.write_bytes(data)
-        # SHCNE_ASSOCCHANGED：让资源管理器丢弃已缓存的快捷方式图标。
-        ctypes.windll.shell32.SHChangeNotify(0x08000000, 0, None, None)
     except OSError:
         return False
+    _refresh_shell_icons()
     return True
 
 
