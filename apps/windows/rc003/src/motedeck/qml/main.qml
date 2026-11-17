@@ -314,11 +314,14 @@ ApplicationWindow {
     }
 
     // 拖文件进按键页时的整窗遮罩：铺满窗口，和弹窗那种压暗一致。
+    // 必须挂在 Overlay 层并压到所有弹层之上：按键页的编辑抽屉本身也是弹层，
+    // 留在普通内容层会被它盖住，拖拽提示就露不出来。
     Rectangle {
         id: mappingImportScrim
         objectName: "mappingImportScrim"
+        parent: Overlay.overlay
         anchors.fill: parent
-        z: 90
+        z: 1000001
         visible: opacity > 0
         color: "#000000"
         opacity: window.mappingImportDragActive ? 0.42 : 0
@@ -331,8 +334,9 @@ ApplicationWindow {
     Rectangle {
         id: mappingImportHint
         objectName: "mappingImportHint"
+        parent: Overlay.overlay
         anchors.centerIn: parent
-        z: 91
+        z: 1000002
         width: Math.min(Math.max(360, mappingImportHintColumn.implicitWidth + 48),
                         parent.width - 48)
         implicitHeight: mappingImportHintColumn.implicitHeight + 40
@@ -731,124 +735,138 @@ ApplicationWindow {
             if (reason !== Platform.SystemTrayIcon.Context)
                 window.restoreWindow()
             else
-                trayMenuWindow.toggleAtCursor()
+                window.showTrayMenu()
         }
     }
 
     // 托盘右键菜单：自绘无边框弹出窗（Qt.Popup），样式跟随设置界面的
-    // 深浅色 tokens，替代系统默认菜单 UI。
-    Window {
-        id: trayMenuWindow
-        objectName: "trayMenuWindow"
-        visible: false
-        flags: Qt.Popup | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint
-        color: "transparent"
-        width: trayMenuPanel.width
-        height: trayMenuPanel.height
+    // 深浅色 tokens，替代系统默认菜单 UI。窗口必须用 createObject(null)
+    // 建成独立顶层窗口：声明在 ApplicationWindow 里会变成它的子窗口，
+    // 主窗口隐藏到托盘时子窗口也跟着隐藏，右键就弹不出菜单来。
+    property var trayMenuWindow: null
 
-        function toggleAtCursor() {
-            if (visible) {
-                close()
-                return
+    function showTrayMenu() {
+        if (trayMenuWindow === null)
+            trayMenuWindow = trayMenuComponent.createObject(null)
+        if (trayMenuWindow !== null)
+            trayMenuWindow.toggleAtCursor()
+    }
+
+    Component {
+        id: trayMenuComponent
+        Window {
+            id: trayMenuWindowRoot
+            objectName: "trayMenuWindow"
+            visible: false
+            flags: Qt.Popup | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint
+            color: "transparent"
+            width: trayMenuPanel.width
+            height: trayMenuPanel.height
+
+            function toggleAtCursor() {
+                if (visible) {
+                    close()
+                    return
+                }
+                const cursor = SettingsController.cursorPosition()
+                const screen = trayMenuWindowRoot.Screen
+                // 垂直：任务栏一般在屏幕下缘，菜单底部贴着光标上方一点；
+                // 水平：菜单从光标右侧弹出，贴着屏幕右缘放不下时退回左侧，
+                // 再夹进当前屏幕的可用区域，任何光标位置都不出屏。
+                const pad = window.tokens.spacingSmall
+                x = Math.round(Math.max(
+                    screen.virtualX + pad,
+                    Math.min(cursor.x + pad,
+                        screen.virtualX + screen.desktopAvailableWidth
+                            - trayMenuPanel.width - pad)))
+                y = Math.round(Math.max(
+                    screen.virtualY + pad,
+                    Math.min(cursor.y - trayMenuPanel.height - pad,
+                        screen.virtualY + screen.desktopAvailableHeight
+                            - trayMenuPanel.height - pad)))
+                visible = true
             }
-            const cursor = SettingsController.cursorPosition()
-            const screen = trayMenuWindow.Screen
-            // 垂直：任务栏一般在屏幕下缘，菜单底部贴着光标上方一点；
-            // 水平：菜单从光标右侧弹出，贴着屏幕右缘放不下时退回左侧，
-            // 再夹进当前屏幕的可用区域，任何光标位置都不出屏。
-            const pad = window.tokens.spacingSmall
-            x = Math.round(Math.max(
-                screen.virtualX + pad,
-                Math.min(cursor.x + pad,
-                    screen.virtualX + screen.desktopAvailableWidth
-                        - trayMenuPanel.width - pad)))
-            y = Math.round(Math.max(
-                screen.virtualY + pad,
-                Math.min(cursor.y - trayMenuPanel.height - pad,
-                    screen.virtualY + screen.desktopAvailableHeight
-                        - trayMenuPanel.height - pad)))
-            visible = true
-        }
 
-        // 点击菜单以外或切到别的窗口就收起：popup 失去激活即关闭；
-        // callLater 避免在刚弹出的当帧误判成非激活。
-        onActiveChanged: {
-            if (!active && visible)
-                Qt.callLater(function() {
-                    if (!trayMenuWindow.active)
-                        trayMenuWindow.close()
-                })
-        }
+            // 点击菜单以外或切到别的窗口就收起：popup 失去激活即关闭；
+            // callLater 避免在刚弹出的当帧误判成非激活。
+            onActiveChanged: {
+                if (!active && visible)
+                    Qt.callLater(function() {
+                        if (!trayMenuWindowRoot.active)
+                            trayMenuWindowRoot.close()
+                    })
+            }
 
-        Rectangle {
-            id: trayMenuPanel
-            focus: true
-            Keys.onEscapePressed: trayMenuWindow.close()
-            width: trayMenuColumn.width + 2 * 8
-            height: trayMenuColumn.height + 2 * 8
-            radius: window.tokens.cornerRadiusCard
-            color: window.tokens.darkMode ? "#1f1f1f" : "#f7f7f8"
-            border.width: 1
-            border.color: window.tokens.darkMode
-                ? "#3a3a3a" : "#d9d9dc"
+            Rectangle {
+                id: trayMenuPanel
+                focus: true
+                Keys.onEscapePressed: trayMenuWindowRoot.close()
+                width: trayMenuColumn.width + 2 * 8
+                height: trayMenuColumn.height + 2 * 8
+                radius: window.tokens.cornerRadiusCard
+                color: window.tokens.darkMode ? "#1f1f1f" : "#f7f7f8"
+                border.width: 1
+                border.color: window.tokens.darkMode
+                    ? "#3a3a3a" : "#d9d9dc"
 
-            Column {
-                id: trayMenuColumn
-                x: 8
-                y: 8
-                spacing: 2
+                Column {
+                    id: trayMenuColumn
+                    x: 8
+                    y: 8
+                    spacing: 2
 
-                TrayMenuAction {
-                    objectName: "trayMenuOpenWindow"
-                    label: qsTr("打开%1").arg(
-                        SettingsController.applicationDisplayName)
-                    onTriggered: {
-                        trayMenuWindow.close()
-                        window.restoreWindow()
+                    TrayMenuAction {
+                        objectName: "trayMenuOpenWindow"
+                        label: qsTr("打开%1").arg(
+                            SettingsController.applicationDisplayName)
+                        onTriggered: {
+                            trayMenuWindowRoot.close()
+                            window.restoreWindow()
+                        }
                     }
-                }
-                TrayMenuAction {
-                    objectName: "trayMenuBridgeToggle"
-                    enabled: !SettingsController.bridgeLaunchBusy
-                        && SettingsController.bridgeLaunchPhase !== "stopping"
-                        && !SettingsController.configurationReadOnly
-                        && !DiagnosticsController.vbCableTestRunning
-                        && !DiagnosticsController.driverActionRunning
-                        && !SettingsController.voiceHotkeyBusy
-                        && !SettingsController.endpointPreflightBusy
-                    label: SettingsController.bridgeLaunchPhase === "stopping"
-                        ? qsTr("服务停止中…")
-                        : SettingsController.bridgeRunning
-                          ? qsTr("关闭服务")
-                          : SettingsController.bridgeLaunchBusy
-                            ? qsTr("服务启动中…") : qsTr("启动服务")
-                    onTriggered: {
-                        trayMenuWindow.close()
-                        if (SettingsController.bridgeRunning)
-                            SettingsController.stopBridge()
-                        else
-                            SettingsController.startBridge()
+                    TrayMenuAction {
+                        objectName: "trayMenuBridgeToggle"
+                        enabled: !SettingsController.bridgeLaunchBusy
+                            && SettingsController.bridgeLaunchPhase !== "stopping"
+                            && !SettingsController.configurationReadOnly
+                            && !DiagnosticsController.vbCableTestRunning
+                            && !DiagnosticsController.driverActionRunning
+                            && !SettingsController.voiceHotkeyBusy
+                            && !SettingsController.endpointPreflightBusy
+                        label: SettingsController.bridgeLaunchPhase === "stopping"
+                            ? qsTr("服务停止中…")
+                            : SettingsController.bridgeRunning
+                              ? qsTr("关闭服务")
+                              : SettingsController.bridgeLaunchBusy
+                                ? qsTr("服务启动中…") : qsTr("启动服务")
+                        onTriggered: {
+                            trayMenuWindowRoot.close()
+                            if (SettingsController.bridgeRunning)
+                                SettingsController.stopBridge()
+                            else
+                                SettingsController.startBridge()
+                        }
                     }
-                }
-                TrayMenuAction {
-                    objectName: "trayMenuReconnect"
-                    visible: SettingsController.bridgeReconnectAvailable
-                    enabled: !SettingsController.bridgeReconnectBusy
-                    label: SettingsController.bridgeReconnectBusy
-                        ? qsTr("正在重新连接…") : qsTr("重新连接")
-                    onTriggered: {
-                        trayMenuWindow.close()
-                        SettingsController.reconnectBridgeNow()
+                    TrayMenuAction {
+                        objectName: "trayMenuReconnect"
+                        visible: SettingsController.bridgeReconnectAvailable
+                        enabled: !SettingsController.bridgeReconnectBusy
+                        label: SettingsController.bridgeReconnectBusy
+                            ? qsTr("正在重新连接…") : qsTr("重新连接")
+                        onTriggered: {
+                            trayMenuWindowRoot.close()
+                            SettingsController.reconnectBridgeNow()
+                        }
                     }
-                }
-                TrayMenuSeparator {}
-                TrayMenuAction {
-                    objectName: "trayMenuFullExit"
-                    danger: true
-                    label: qsTr("完全退出")
-                    onTriggered: {
-                        trayMenuWindow.close()
-                        window.requestFullExit()
+                    TrayMenuSeparator {}
+                    TrayMenuAction {
+                        objectName: "trayMenuFullExit"
+                        danger: true
+                        label: qsTr("完全退出")
+                        onTriggered: {
+                            trayMenuWindowRoot.close()
+                            window.requestFullExit()
+                        }
                     }
                 }
             }

@@ -152,11 +152,12 @@ def find_window_icon(classic: bool = False) -> Optional[Path]:
     Fixed on purpose - it never follows the service state (only the tray
     icon does), and Windows' title bar/taskbar/Alt-Tab all read multi-size
     .ico resources better than a single flat PNG. The classic variant
-    (MoteDeck 0.2.0 tile) swaps the rendered PNG; the packaged exe's
-    embedded .ico stays fixed at build time.
+    (MoteDeck 0.2.0 tile) has its own generated .ico so the native
+    WM_SETICON path can load it too; the packaged exe's embedded .ico
+    stays fixed at build time.
     """
 
-    filename = "remote-mic-classic.png" if classic else "remote-mic.ico"
+    filename = "remote-mic-classic.ico" if classic else "remote-mic.ico"
     for directory in _app_icon_directory_candidates():
         candidate = directory / filename
         if candidate.is_file():

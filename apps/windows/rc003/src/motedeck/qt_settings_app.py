@@ -981,11 +981,18 @@ def run_settings_window(
             path = resources.find_window_icon(
                 classic=controller.brandIconMode == 1
             )
-            if path is not None:
-                window_chrome_windows.apply_native_window_icon(
-                    root_window,
-                    str(path),
-                )
+            if path is None:
+                return
+            window_chrome_windows.apply_native_window_icon(
+                root_window,
+                str(path),
+            )
+            # 安装器快捷方式的图标固定指向 {app}\MoteDeck.ico，同步替换，
+            # 桌面和开始菜单才会跟窗口/托盘一起换（开发版自动跳过）。
+            window_chrome_windows.sync_installed_shortcut_icon(
+                sys.executable,
+                str(path),
+            )
 
         update_native_window_icon()
         controller.brandIconModeChanged.connect(update_application_icon)

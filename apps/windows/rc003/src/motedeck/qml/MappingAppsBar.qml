@@ -108,7 +108,7 @@ Item {
         tokens: root.tokens
         compact: true
         iconName: "prev"
-        enabled: root.interactive && !track.atXBeginning
+        enabled: root.interactive && root.hasOverflow && track.firstIndex > 0
         Accessible.name: qsTr("向左移动一格")
         onClicked: track.stepBy(-1)
     }
@@ -357,8 +357,6 @@ Item {
                     }
                 }
             }
-
-            onContentXChanged: root.updateBorders()
         }
     }
 
@@ -400,13 +398,6 @@ Item {
                     tipPopup.close()
             }
         }
-    }
-
-    function updateBorders() {
-        // 让按钮的可用状态跟随滚动位置（atXBeginning / atXEnd）
-        navPrev.enabled = root.interactive && root.hasOverflow && track.firstIndex > 0
-        navNext.enabled = root.interactive && root.hasOverflow
-            && track.firstIndex < Math.max(0, root.appCount - root.visibleSlots)
     }
 
     Popup {

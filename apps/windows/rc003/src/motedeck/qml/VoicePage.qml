@@ -759,7 +759,7 @@ Item {
                                         tokens: root.tokens
                                         Layout.fillWidth: true
                                         Layout.minimumWidth: 96
-                                        placeholderText: qsTr("名称，留空为 %1")
+                                        placeholderText: qsTr("留空为 %1")
                                             .arg(String(keyCard.modelData.displayName))
                                         text: String(keyCard.modelData.name || "")
                                         enabled: !root.configurationWriteBusy
@@ -819,8 +819,8 @@ Item {
                                             maximumLineCount: 1
                                             anchors.verticalCenter: parent.verticalCenter
                                             text: keyCard.openMexiaKey
-                                                ? qsTr("该按键来自OpenMexia，默认使用插件通信，不可编辑快捷键映射")
-                                                : qsTr("该按键来自Vokie，默认使用插件通信，不可编辑快捷键映射")
+                                                ? qsTr("来自 OpenMexia 插件，快捷键由插件提供")
+                                                : qsTr("来自 Vokie 插件，快捷键由插件提供")
                                         }
                                     }
 
@@ -828,7 +828,8 @@ Item {
                                         objectName: "recordVoiceHotkeyButton"
                                         tokens: root.tokens
                                         flat: true
-                                        compactMinimumWidth: tokens.buttonWidth4Chars
+                                        // 只占两个字宽，省下的横向空间留给名称输入框。
+                                        compactMinimumWidth: tokens.buttonWidth2Chars
                                         text: qsTr("录入")
                                         // 插件语音键不录快捷键：控件保留占位，名称框才和其他行一样长。
                                         opacity: keyCard.pluginLocked ? 0 : 1

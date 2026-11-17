@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ctypes
 from ctypes import wintypes
+from pathlib import Path
 import sys
 from typing import Callable, Optional
 
@@ -207,6 +208,39 @@ def apply_native_window_icon(
                 wintypes.LPARAM(handle),
             )
     except (AttributeError, OSError, TypeError, ValueError):
+        return False
+    return True
+
+
+def sync_installed_shortcut_icon(
+    executable: str,
+    icon_path: str,
+    *,
+    platform: Optional[str] = None,
+) -> bool:
+    """让安装目录里的 MoteDeck.ico 跟随当前品牌图标。
+
+    安装器建的桌面/开始菜单快捷方式把图标固定指向 ``{app}\\MoteDeck.ico``，
+    只换窗口和托盘的话快捷方式仍显示旧图标。这里把该文件替换成当前品牌
+    的 ico 并广播一次图标缓存刷新，桌面、开始菜单和任务栏就一致了。
+    开发版/便携版没有这个文件，直接跳过。
+    """
+
+    current_platform = sys.platform if platform is None else platform
+    if current_platform != "win32":
+        return False
+
+    target = Path(executable).resolve().parent / "MoteDeck.ico"
+    if not target.is_file():
+        return False
+    try:
+        data = Path(icon_path).read_bytes()
+        if target.read_bytes() == data:
+            return True
+        target.write_bytes(data)
+        # SHCNE_ASSOCCHANGED：让资源管理器丢弃已缓存的快捷方式图标。
+        ctypes.windll.shell32.SHChangeNotify(0x08000000, 0, None, None)
+    except OSError:
         return False
     return True
 
