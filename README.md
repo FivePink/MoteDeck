@@ -42,12 +42,19 @@ MoteDeck 是一个以遥控器语音控制电脑为核心的 Windows 工具，�
 
 ## 界面预览
 
-<img src="docs/screenshots/device-overview.png" width="100%" alt="MoteDeck 设备页：已连接小米蓝牙遥控器 2 Pro，显示按键接收、遥控器服务与检查更新">
+<img src="docs/screenshots/device-overview.png" width="100%" alt="MoteDeck 设备页：已连接小米蓝牙遥控器 2 Pro，显示按键接收、遥控器服务、检查更新与诊断日志">
 
 <p align="center">
-  <img src="docs/screenshots/buttons-mapping.png" width="49%" alt="按键盘：遥控器实物图与每个按键的单击、双击、长按动作">
-  <img src="docs/screenshots/voice-routing.png" width="49%" alt="语音页：虚拟音频、输出端点、麦克风权限与语音键配置">
+  <img src="docs/screenshots/buttons-mapping.png" width="49%" alt="按键页：遥控器实物图与每个按键的单击、双击、长按动作">
+  <img src="docs/screenshots/buttons-editor.png" width="49%" alt="按键页的编辑面板：为选中按键设置单击、双击、长按动作与注入方式">
 </p>
+
+<p align="center">
+  <img src="docs/screenshots/voice-routing.png" width="49%" alt="语音页：虚拟音频、输出端点、麦克风权限与语音键配置">
+  <img src="docs/screenshots/voice-keys.png" width="49%" alt="语音键配置：可调整顺序、单独停用多个语音键">
+</p>
+
+<img src="docs/screenshots/device-troubleshoot.png" width="100%" alt="设备页的求助 AI：一键复制排查提示词，交给任意 AI 助手协助排查按键问题">
 
 ---
 
