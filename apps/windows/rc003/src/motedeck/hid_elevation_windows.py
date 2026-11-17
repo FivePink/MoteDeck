@@ -78,7 +78,9 @@ HELPER_PROTOCOL_VERSION = 1
 # Generation 22 refreshes the digest after shared config/identity changes.
 # Generation 23 refreshes the digest after the voice badge / device model
 # confirmation / icon-style release changed shared config and resource sources.
-HELPER_GENERATION = 23
+# Generation 24 refreshes the digest after the classic window icon switched
+# from a flat PNG to a generated multi-size .ico.
+HELPER_GENERATION = 24
 TASK_CONTRACT_VERSION = 5
 MANIFEST_FILENAME = "helper-manifest.json"
 INJECTION_RESULT_FILENAME = "hid-injection-result.json"
