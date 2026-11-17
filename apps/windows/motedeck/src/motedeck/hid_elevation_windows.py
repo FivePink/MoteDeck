@@ -80,7 +80,9 @@ HELPER_PROTOCOL_VERSION = 1
 # confirmation / icon-style release changed shared config and resource sources.
 # Generation 24 refreshes the digest after the classic window icon switched
 # from a flat PNG to a generated multi-size .ico.
-HELPER_GENERATION = 24
+# Generation 25 refreshes the digest after the Windows app directory moved
+# from rc003 to motedeck.
+HELPER_GENERATION = 25
 TASK_CONTRACT_VERSION = 5
 MANIFEST_FILENAME = "helper-manifest.json"
 INJECTION_RESULT_FILENAME = "hid-injection-result.json"
