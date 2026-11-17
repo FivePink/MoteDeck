@@ -820,8 +820,9 @@ class SettingsControllerTests(unittest.TestCase):
 
         controller._set_bridge_connected(False)
         self.assertTrue(controller.buttonReceiverUsable)
+        # 未连接遥控器也按报错图标显示。
         self.assertTrue(
-            controller.trayIconSource.endswith("remote-mic-tray.png")
+            controller.trayIconSource.endswith("remote-mic-stopped.png")
         )
         self.assertIn("未连接", controller.trayTooltip)
 
@@ -838,8 +839,9 @@ class SettingsControllerTests(unittest.TestCase):
             )
         )
         self.assertFalse(controller.buttonReceiverUsable)
+        # 按键接收异常同样归为未就绪，显示报错图标。
         self.assertTrue(
-            controller.trayIconSource.endswith("remote-mic-tray.png")
+            controller.trayIconSource.endswith("remote-mic-stopped.png")
         )
         self.assertIn("按键接收异常", controller.trayTooltip)
         controller._set_bridge_running(False)
@@ -1679,8 +1681,10 @@ class SettingsControllerTests(unittest.TestCase):
         self.assertTrue(controller.actionOptionStartsGroup("元素导航开关"))
         self.assertEqual(controller.actionOptionGroupTitle("方向上"), "按键操作")
         self.assertFalse(controller.actionOptionStartsGroup("方向上"))
-        self.assertEqual(controller.actionOptionGroupTitle("未设置"), "")
+        self.assertEqual(controller.actionOptionGroupTitle("未设置"), "其他")
         self.assertFalse(controller.actionOptionStartsGroup("未设置"))
+        self.assertEqual(controller.actionOptionGroupTitle("语音1"), "语音")
+        self.assertEqual(controller.actionOptionGroupTitle("语音模式切换"), "语音")
 
     def test_editor_offers_one_generic_launch_application_option(self):
         controller, _ = self._make_controller()
@@ -3525,7 +3529,6 @@ class SettingsControllerTests(unittest.TestCase):
 
         app = QCoreApplication.instance() or QCoreApplication([])
         controller, model = self._make_controller()
-        controller.setVoiceOtherKeySwitch(True)
 
         model.setActionTextAt(model.index_of("ok"), "语音模式切换")
         self._wait_for_qt(
@@ -3546,7 +3549,6 @@ class SettingsControllerTests(unittest.TestCase):
 
         app = QCoreApplication.instance() or QCoreApplication([])
         controller, model = self._make_controller()
-        controller.setVoiceOtherKeySwitch(True)
 
         model.setSecondaryActionTextAt(
             model.index_of("power"), "long_press", "语音模式切换"
@@ -3758,32 +3760,14 @@ class SettingsControllerTests(unittest.TestCase):
         self.assertIs(saved["voice_key_configs"][0]["short_press_resend"], True)
         self.assertIs(saved["voice_cycle_short_press"], False)
 
-    def test_other_key_switch_unlocks_mode_cycle_action_options(self):
+    def test_mode_cycle_action_is_always_mappable(self):
         controller, _ = self._make_controller()
-        self.assertFalse(controller.voiceOtherKeySwitch)
-        self.assertNotIn(
-            "语音模式切换", list(controller.primaryActionOptionsFor("power"))
-        )
-        self.assertNotIn(
-            "语音模式切换", list(controller.longPressActionOptionsFor("power"))
-        )
-
-        controller.setVoiceOtherKeySwitch(True)
-        self.assertTrue(controller.voiceOtherKeySwitch)
-        saved = config.load_config(config.config_path(config.config_root()))
-        self.assertIs(saved["voice_other_key_switch"], True)
         for options in (
             controller.primaryActionOptionsFor("power"),
             controller.secondaryActionOptionsFor("power"),
             controller.longPressActionOptionsFor("power"),
         ):
             self.assertIn("语音模式切换", list(options))
-
-        controller.setVoiceOtherKeySwitch(False)
-        self.assertFalse(controller.voiceOtherKeySwitch)
-        self.assertNotIn(
-            "语音模式切换", list(controller.primaryActionOptionsFor("power"))
-        )
 
     def test_feedback_is_scoped_to_the_page_that_owns_the_action(self):
         controller, model = self._make_controller()
@@ -7605,6 +7589,27 @@ class RunSettingsWindowShutdownCoverageTests(unittest.TestCase):
         )
         self._env_patch.start()
         qt_settings_app._diagnostics_shutdown_event.clear()
+        # 按键页悬浮中继、渲染后端探测与品牌图标应用都属于窗口管道件：
+        # 这些用例的假窗口不是真 QObject（也没有真 QGuiApplication——真
+        # QIcon/QPixmap 会在无 GUI 应用的进程里直接崩溃），与本类的关闭
+        # 契约无关，按类注释的口径一并换成可控桩。
+        relay_patch = mock.patch.object(
+            qt_settings_app,
+            "_install_mapping_editor_hover_relay",
+            return_value=None,
+        )
+        relay_patch.start()
+        self.addCleanup(relay_patch.stop)
+        renderer_patch = mock.patch.object(
+            qt_settings_app, "_prefer_opengl_renderer", return_value=None
+        )
+        renderer_patch.start()
+        self.addCleanup(renderer_patch.stop)
+        icon_patch = mock.patch.object(
+            qt_settings_app, "_apply_application_icon", return_value=None
+        )
+        icon_patch.start()
+        self.addCleanup(icon_patch.stop)
 
     def tearDown(self):
         qt_settings_app._diagnostics_shutdown_event.clear()
@@ -8458,9 +8463,16 @@ assert update_button.property("text") == "查看更新"
 assert find_child(window, "runtimeLogRow_stateLabel").property("text") == "有新版本"
 assert not find_child(window, "applicationUpdateDialog").property("visible")
 QMetaObject.invokeMethod(update_button, "clicked")
-render(window, app)
-
+# 底部上滑弹窗：等 280ms 滑入动画落定（底边贴回窗口底缘）再量几何。
 dialog = find_child(window, "applicationUpdateDialog")
+for _ in range(120):
+    render(window, app, 1)
+    if bool(dialog.property("visible")) and (
+            float(dialog.property("y"))
+            + float(dialog.property("height"))
+            <= float(window.property("height")) + 0.5):
+        break
+
 message = find_child(window, "applicationUpdateMessage")
 version_summary = find_child(window, "applicationUpdateVersionSummary")
 package_summary = find_child(window, "applicationUpdatePackageSummary")
@@ -10082,7 +10094,7 @@ class SettingsShellSourceContractTests(unittest.TestCase):
 
     def test_main_window_owns_the_single_live_bridge_refresh_timer(self):
         self.assertIn('objectName: "bridgeStatusRefreshTimer"', self.main_qml)
-        self.assertIn("? 1000 : 2000", self.main_qml)
+        self.assertIn("? 500 : 600", self.main_qml)
         self.assertIn("running: true", self.main_qml)
         self.assertIn(
             "onTriggered: SettingsController.refreshBridgeState()",
@@ -10289,25 +10301,11 @@ class SettingsShellSourceContractTests(unittest.TestCase):
         for inset in ("leftInset", "rightInset", "topInset", "bottomInset"):
             self.assertIn(f"{inset}: 0", self.compact_tooltip_qml)
         self.assertIn("maximumTextWidth: 260", self.compact_tooltip_qml)
-        # 四列表头各一处提示，加上工具栏驱动状态旁边的一处。
-        self.assertEqual(self.buttons_qml.count("CompactToolTip {"), 5)
-        for title_id in (
-            "primaryGestureTitle",
-            "doubleGestureTitle",
-            "longGestureTitle",
-            "injectModeTitle",
-        ):
-            self.assertIn(f"id: {title_id}", self.buttons_qml)
-        for title_id in (
-            "primaryGestureTitle",
-            "doubleGestureTitle",
-            "longGestureTitle",
-            "injectModeTitle",
-        ):
-            title_start = self.buttons_qml.index(f"id: {title_id}")
-            tooltip_start = self.buttons_qml.index("CompactToolTip {", title_start)
-            title_source = self.buttons_qml[title_start:tooltip_start]
-            self.assertIn("font.pixelSize: tokens.fontSizeControl", title_source)
+        # 重做后的按键页只剩工具栏驱动状态旁边的一处提示：旧编辑区的
+        # 四列表头提示随三行下拉一起删掉了。
+        self.assertEqual(self.buttons_qml.count("CompactToolTip {"), 1)
+        self.assertIn("id: injectModeTitle", self.buttons_qml)
+        self.assertIn("font.pixelSize: tokens.fontSizeControl", self.buttons_qml)
         self.assertNotIn("ToolTip.visible", self.buttons_qml)
         self.assertIn("gestureHover.hovered && !cell.empty", self.mapping_card_qml)
         self.assertIn("cell.usingNote || valueBlock.label.truncated", self.mapping_card_qml)
@@ -10338,20 +10336,10 @@ class SettingsShellSourceContractTests(unittest.TestCase):
             self.buttons_qml,
         )
         self.assertIn("injectMode !== originalInjectMode", self.buttons_qml)
-        # One derived property surfaces the missing driver; a per-action block is
-        # silent: the WinUHid option is greyed out, unselectable, and the
-        # editor falls back to SendInput without printing a reason.
-        self.assertIn(
-            "readonly property string injectModeHintText", self.buttons_qml
-        )
-        self.assertIn(
-            "visible: actionEditor.injectModeHintText.length > 0", self.buttons_qml
-        )
-        self.assertIn('objectName: "actionEditorInjectModeHint"', self.buttons_qml)
-        # The hint reflects the real reason, never a fixed "driver not installed".
-        self.assertIn(
-            "SettingsController.winuhidUnavailableHint", self.buttons_qml
-        )
+        # A missing driver never prints a reason: the option is greyed out and
+        # cannot be picked at all, and the editor simply keeps the old value.
+        self.assertNotIn('objectName: "actionEditorInjectModeHint"', self.buttons_qml)
+        self.assertNotIn("injectModeHintText", self.buttons_qml)
         self.assertIn("readonly property bool winuhidBlocked", self.buttons_qml)
         self.assertIn("actionEditor.isModeBlocked(", self.buttons_qml)
         self.assertIn("syncInjectModeToActions()", self.buttons_qml)
@@ -10549,23 +10537,20 @@ class SettingsShellSourceContractTests(unittest.TestCase):
         self.assertNotIn('ListElement { text: "按键操作"', self.buttons_qml)
 
     def test_visible_mapping_inputs_share_the_grouped_action_sources(self):
-        # 三个动作下拉都通过同一个开关决定是否列出“语音模式切换”，所以绑定
-        # 必须显式依赖该开关，否则开关变化后列表仍是旧的。
+        # “语音模式切换”始终可映射，三个动作下拉不再依赖任何开关。
+        self.assertNotIn(
+            "SettingsController.voiceOtherKeySwitch", self.buttons_qml
+        )
+        # 重做后的面板只有一份分组动作列表，三种手势共用它。
         self.assertEqual(
-            self.buttons_qml.count("SettingsController.voiceOtherKeySwitch"), 3
+            self.buttons_qml.count(
+                "SettingsController.primaryActionOptionsFor(buttonId)"
+            ),
+            1,
         )
-        self.assertIn(
-            "return SettingsController.primaryActionOptionsFor(", self.buttons_qml
-        )
+        self.assertNotIn("SettingsController.secondaryActionOptionsFor(", self.buttons_qml)
+        self.assertNotIn("SettingsController.longPressActionOptionsFor(", self.buttons_qml)
         self.assertIn("actionEditor.buttonId", self.buttons_qml)
-        self.assertEqual(
-            self.buttons_qml.count("return SettingsController.secondaryActionOptionsFor("),
-            1,
-        )
-        self.assertEqual(
-            self.buttons_qml.count("return SettingsController.longPressActionOptionsFor("),
-            1,
-        )
         self.assertEqual(self.buttons_qml.count("cardId: buttonId"), 2)
         self.assertIn('objectName: "actionEditorDialog"', self.buttons_qml)
         self.assertIn('readonly property string headerText: buttonName.length > 0', self.buttons_qml)
@@ -10670,25 +10655,16 @@ class SettingsShellSourceContractTests(unittest.TestCase):
             "SettingsController.isVoiceModeCycleText(normalizedLongText)",
             self.buttons_qml,
         )
-        # 「启动应用」那一行改成「选择应用」，不受快捷键锁限制。
+        # 面板只剩一个录制按钮，锁状态跟着当前手势走。
         self.assertIn(
-            "enabled: actionEditor.primaryIsLaunchApplication\n"
-            "                        ? true : !actionEditor.primaryHotkeyLocked",
+            "enabled: !actionEditor.activeHotkeyLocked",
             self.buttons_qml,
         )
         self.assertIn(
-            "enabled: actionEditor.doubleIsLaunchApplication\n"
-            "                        ? true : !actionEditor.doubleHotkeyLocked",
+            "onClicked: root.openShortcutRecorder(\n"
+            "                        actionEditor.buttonId, actionEditor.rowIndex,\n"
+            "                        actionEditor.activeTrigger)",
             self.buttons_qml,
-        )
-        self.assertIn(
-            "enabled: actionEditor.longIsLaunchApplication\n"
-            "                        ? true : !actionEditor.longHotkeyLocked",
-            self.buttons_qml,
-        )
-        # 动作下拉和备注必须保持可改，用户才能把这一行换成别的动作。
-        self.assertEqual(
-            self.buttons_qml.count("enabled: !actionEditor.primaryIsVoice"), 4
         )
 
     def test_voice_key_section_has_no_redundant_note_only_row(self):
@@ -12380,8 +12356,8 @@ for _ in range(10):
     window.grabWindow()
     app.processEvents()
 
-# Switch to the "按键" tab (index 1) - the ComboBox under test only exists
-# once ButtonsPage is the active StackLayout page.
+# Switch to the "按键" tab (index 1) - the button page only exists once it
+# is the active StackLayout page.
 tab_bar = _find_child_by_object_name(window, "tabBar")
 assert tab_bar is not None
 tab_bar.setProperty("currentIndex", 1)
@@ -12393,433 +12369,194 @@ mapping_list = _find_child_by_object_name(window, "mappingList")
 assert mapping_list is not None
 assert mapping_list.property("count") == 13
 assert _find_child_by_object_name(window, "toggleVoiceModeButton") is None
+assert _find_child_by_object_name(window, "toggleVoiceModeHotkeyField") is None
 assert _find_child_by_object_name(window, "holdVoiceModeButton") is None
-assert _find_child_by_object_name(window, "toggleVoiceHotkeyField") is None
 
-edit_button = _find_child_by_object_name(window, "editMapping_mic")
-assert edit_button is not None, "mic row's edit button not found - is it in view?"
-edit_center = edit_button.mapToScene(
-    QPointF(edit_button.property("width") / 2, edit_button.property("height") / 2)
-).toPoint()
-QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, edit_center)
-for _ in range(5):
-    window.grabWindow()
-    app.processEvents()
 
-editor = _find_child_by_object_name(window, "actionEditorDialog")
-combo = _find_child_by_object_name(window, "actionEditorPrimaryCombo")
-double_combo = _find_child_by_object_name(window, "actionEditorDoubleCombo")
-long_combo = _find_child_by_object_name(window, "actionEditorLongCombo")
-assert editor is not None and editor.property("visible")
-assert combo is not None and double_combo is not None and long_combo is not None
-assert combo.property("visible")
-assert double_combo.property("visible") and long_combo.property("visible")
-assert int(combo.property("count")) == len(controller.primaryActionOptionsFor("mic"))
-assert int(double_combo.property("count")) == len(controller.secondaryActionOptionsFor("mic"))
-assert int(long_combo.property("count")) == len(controller.longPressActionOptionsFor("mic"))
-assert not double_combo.property("enabled") and not long_combo.property("enabled")
-assert combo.property("selectTextByMouse")
-assert double_combo.property("selectTextByMouse")
-assert long_combo.property("selectTextByMouse")
-assert combo.property("contentItem").property("selectByMouse")
-assert double_combo.property("contentItem").property("selectByMouse")
-assert long_combo.property("contentItem").property("selectByMouse")
+def _settle(passes=4):
+    for _ in range(passes):
+        window.grabWindow()
+        app.processEvents()
 
-validation_error = _find_child_by_object_name(
-    window,
-    "actionEditorValidationError",
-)
-editor_cancel_button = _find_child_by_object_name(
-    window,
-    "actionEditorCancelButton",
-)
-editor_save_button = _find_child_by_object_name(
-    window,
-    "actionEditorSaveButton",
-)
-assert validation_error is not None
-assert editor_cancel_button is not None and editor_save_button is not None
 
-# Incomplete/invalid text stays quiet until confirmation and remains a draft.
-invalid_center = combo.mapToScene(
-    QPointF(combo.property("width") / 2, combo.property("height") / 2)
-).toPoint()
-QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, invalid_center)
-app.processEvents()
-QTest.keySequence(window, QKeySequence.SelectAll)
-for ch in "not_a_key":
-    QTest.keyClick(window, ord(ch))
-    app.processEvents()
-assert not validation_error.property("visible")
-QTest.keyClick(window, Qt.Key_Return)
-_wait_until(
-    window,
-    app,
-    lambda: bool(validation_error.property("visible")),
-    "invalid mapping did not show its dialog error",
-)
-assert validation_error.property("text") == (
-    "单击：不认识按键“not_a_key”，请检查键名或使用按键录入。"
-)
-assert editor_save_button.property("enabled")
-before_invalid_primary = model.to_display_map()["mic"]
-before_invalid_secondary = dict(model.to_secondary_display_map()["mic"])
-assert QMetaObject.invokeMethod(
-    editor,
-    "saveDraft",
-    Qt.ConnectionType.DirectConnection,
-)
-_render(window, app, 3)
-assert editor.property("visible")
-assert model.to_display_map()["mic"] == before_invalid_primary
-assert model.to_secondary_display_map()["mic"] == before_invalid_secondary
+def _click_item(item, label):
+    assert item is not None, label
+    assert bool(item.property("visible")), label
+    point = item.mapToScene(
+        QPointF(item.property("width") / 2, item.property("height") / 2)
+    ).toPoint()
+    assert 0 <= point.x() <= window.width(), (label, point)
+    assert 0 <= point.y() <= window.height(), (label, point)
+    QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, point)
+    _settle(3)
 
-cancel_center = editor_cancel_button.mapToScene(
-    QPointF(
-        editor_cancel_button.property("width") / 2,
-        editor_cancel_button.property("height") / 2,
+
+def _click_object(name):
+    item = _find_child_by_object_name(window, name)
+    _click_item(item, name)
+    return item
+
+
+def _open_panel(card_name):
+    card = _find_child_by_object_name(window, card_name)
+    assert card is not None, card_name
+    _click_item(card, card_name)
+    # 右侧抽屉有滑入动画，等它停稳再点里面的东西。
+    time.sleep(0.45)
+    _settle()
+    panel = _find_child_by_object_name(window, "actionEditorDialog")
+    assert panel is not None and panel.property("visible")
+    return panel
+
+
+editor = _open_panel("editMapping_mic")
+
+# 旧的三行「下拉 + 录入 + 备注」编辑区已经删掉：面板只剩手势卡片和分类列表。
+assert _find_child_by_object_name(window, "actionEditorPrimaryCombo") is None
+assert _find_child_by_object_name(window, "actionEditorDoubleCombo") is None
+assert _find_child_by_object_name(window, "actionEditorLongCombo") is None
+assert _find_child_by_object_name(window, "actionEditorGestureCard") is not None
+assert editor.property("activeTrigger") == "single_click"
+assert _find_child_by_object_name(window, "actionEditorValidationError") is not None
+assert _find_child_by_object_name(window, "actionEditorCancelButton") is None
+assert _find_child_by_object_name(window, "actionEditorSaveButton") is not None
+
+
+def _click_gesture(gesture):
+    names = {
+        "single_click": "mappingSingleCell_editor_mic",
+        "double_click": "mappingDoubleCell_editor_mic",
+        "long_press": "mappingLongCell_editor_mic",
+    }
+    _click_object(names[gesture])
+    assert editor.property("activeTrigger") == gesture, editor.property("activeTrigger")
+
+
+def _open_section(title):
+    # 展开一个分类；默认只展开第一组。
+    _click_object("actionEditorSection_" + title)
+    # 分类收起/展开有 160ms 高度过渡，等它停稳再点里面的动作项。
+    time.sleep(0.25)
+    _settle()
+
+
+def _record_shortcut(text, expected):
+    record_button = _click_object("actionEditorRecordButton")
+    assert bool(record_button.property("enabled")), "录制按钮被锁住了"
+    recorder = _find_child_by_object_name(window, "shortcutRecorderDialog")
+    assert recorder is not None
+    _wait_until(
+        window,
+        app,
+        lambda: bool(recorder.property("opened")) and controller.hotkeyCaptureReady,
+        "shortcut recorder did not start physical capture",
     )
-).toPoint()
-QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, cancel_center)
-_wait_until(
-    window,
-    app,
-    lambda: not bool(editor.property("visible")),
-    "cancel did not close the invalid mapping draft",
-)
-assert model.to_display_map()["mic"] == before_invalid_primary
-assert model.to_secondary_display_map()["mic"] == before_invalid_secondary
+    recorder_content = recorder.property("contentItem")
+    manual_mode = _find_child_by_object_name(
+        recorder_content, "shortcutRecorderManualModeButton")
+    manual_field = _find_child_by_object_name(
+        recorder_content, "shortcutRecorderManualField")
+    manual_confirm = _find_child_by_object_name(
+        recorder_content, "shortcutRecorderManualConfirmButton")
+    assert manual_mode is not None and manual_field is not None
+    assert manual_confirm is not None
+    _click_item(manual_mode, "shortcutRecorderManualModeButton")
+    _wait_until(
+        window,
+        app,
+        lambda: not controller.hotkeyCaptureActive,
+        "manual mode did not stop physical capture",
+    )
+    _click_item(manual_field, "shortcutRecorderManualField")
+    for ch in text:
+        QTest.keyClick(window, Qt.Key_Plus if ch == "+" else ord(ch))
+        app.processEvents()
+    assert str(manual_field.property("text")) == text, manual_field.property("text")
+    _click_item(manual_confirm, "shortcutRecorderManualConfirmButton")
+    _wait_until(
+        window,
+        app,
+        lambda: not bool(recorder.property("visible")),
+        "manual shortcut confirmation did not close the recorder",
+    )
+    assert editor.property("primaryText") == expected, editor.property("primaryText")
 
-# Reopening starts from the unchanged model. A legal replacement clears the
-# error later in this same real-user flow and can still be completed normally.
-QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, edit_center)
-_wait_until(
-    window,
-    app,
-    lambda: bool(editor.property("visible")),
-    "mapping editor did not reopen after cancel",
-)
-assert combo.property("editText") == before_invalid_primary
-assert validation_error.property("text") == ""
-assert editor_save_button.property("enabled")
 
-current_index = int(combo.property("currentIndex"))
-indicator_point = combo.mapToScene(
-    QPointF(combo.property("width") - 8, combo.property("height") / 2)
-).toPoint()
-QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, indicator_point)
-for _ in range(5):
-    window.grabWindow()
-    app.processEvents()
-current_option = _find_child_by_object_name(
-    window,
-    "actionEditorPrimaryCombo_option_" + str(current_index),
-)
-assert current_option is not None, "current editor option was not instantiated"
+# 1) 先把语音键的单击换成一个普通预设动作，双击/长按两格才会露出来。
+_open_section("按键操作")
+_click_object("actionEditorAction_Escape")
+assert editor.property("primaryText") == "Escape", editor.property("primaryText")
+assert bool(_find_child_by_object_name(window, "mappingDoubleCell_editor_mic").property("visible"))
+
+# 2) 用面板里的「录制单击快捷键…」录一个系统快捷键，走真实录入对话框。
+_record_shortcut("win+l", "Win + L")
+assert FakeHotkeyCapture.start_calls == 1
+assert FakeHotkeyCapture.stop_calls == 1
+
+# 3) 点手势卡片切到双击，再从分类列表里选动作：先写进面板草稿，
+#    统一等「完成」落盘。
+_click_gesture("double_click")
+_click_object("actionEditorAction_Escape")
+current_option = _find_child_by_object_name(window, "actionEditorAction_Escape")
 current_option_label = current_option.property("contentItem")
 current_option_state = {
-    "highlighted": bool(current_option.property("highlighted")),
+    "highlighted": bool(current_option.property("current")),
     "font_weight": int(current_option_label.property("font").weight()),
 }
 assert current_option_state["highlighted"]
 assert current_option_state["font_weight"] >= 600
-grouped_index = list(
-    controller.primaryActionOptionsFor("mic")
-).index("Escape")
-grouped_option = _find_child_by_object_name(
-    window,
-    "actionEditorPrimaryCombo_option_" + str(grouped_index),
-)
-assert grouped_option is not None
-assert int(grouped_option.property("groupHeaderHeight")) > 0
-before_header_click = (
-    int(combo.property("currentIndex")),
-    str(combo.property("editText")),
-)
-header_point = grouped_option.mapToScene(
-    QPointF(
-        grouped_option.property("width") / 2,
-        grouped_option.property("groupHeaderHeight") / 2,
-    )
-).toPoint()
-QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, header_point)
-for _ in range(3):
-    window.grabWindow()
-    app.processEvents()
-assert combo.property("down"), "group header click unexpectedly closed the popup"
-assert (
-    int(combo.property("currentIndex")),
-    str(combo.property("editText")),
-) == before_header_click
-body_point = grouped_option.mapToScene(
-    QPointF(
-        grouped_option.property("width") / 2,
-        grouped_option.property("height") - 4,
-    )
-).toPoint()
-QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, body_point)
-for _ in range(3):
-    window.grabWindow()
-    app.processEvents()
-assert not combo.property("down")
-assert combo.property("editText") == "Escape"
-assert editor.property("primaryText") == "Escape"
+assert editor.property("doubleText") == "Escape", editor.property("doubleText")
 
-# Open the real shortcut recorder, switch from physical capture to manual
-# input, and type a system shortcut without generating Win key events.
-record_button = _find_child_by_object_name(
-    window, "actionEditorPrimaryRecordButton"
+_click_gesture("long_press")
+_click_object("actionEditorAction_回车")
+assert editor.property("longText") == "回车", editor.property("longText")
+
+# 4) 回到单击，用按键录入给出最终组合键。
+_click_gesture("single_click")
+_record_shortcut("ctrl+shift+[", "Ctrl + Shift + [")
+assert FakeHotkeyCapture.start_calls == 2
+assert FakeHotkeyCapture.stop_calls == 2
+
+_click_item(
+    _find_child_by_object_name(window, "actionEditorSaveButton"),
+    "actionEditorSaveButton",
 )
-assert record_button is not None
-record_center = record_button.mapToScene(
-    QPointF(
-        record_button.property("width") / 2,
-        record_button.property("height") / 2,
-    )
-).toPoint()
-QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, record_center)
-recorder = _find_child_by_object_name(window, "shortcutRecorderDialog")
-assert recorder is not None
+# 面板是滑出动画，等动画结束再判断是否真的关掉了。
 _wait_until(
     window,
     app,
-    lambda: bool(recorder.property("opened")) and controller.hotkeyCaptureReady,
-    "shortcut recorder did not start physical capture",
+    lambda: not editor.property("visible"),
+    "editor did not slide out after clicking 完成",
 )
-recorder_content = recorder.property("contentItem")
-manual_mode = _find_child_by_object_name(
-    recorder_content, "shortcutRecorderManualModeButton"
-)
-manual_field = _find_child_by_object_name(recorder_content, "shortcutRecorderManualField")
-manual_confirm = _find_child_by_object_name(
-    recorder_content, "shortcutRecorderManualConfirmButton"
-)
-assert manual_mode is not None and manual_field is not None
-assert manual_confirm is not None
-manual_mode_center = manual_mode.mapToScene(
-    QPointF(
-        manual_mode.property("width") / 2,
-        manual_mode.property("height") / 2,
-    )
-).toPoint()
-QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, manual_mode_center)
-_wait_until(
-    window,
-    app,
-    lambda: not controller.hotkeyCaptureActive,
-    "manual mode did not stop physical capture",
-)
-manual_field_center = manual_field.mapToScene(
-    QPointF(
-        manual_field.property("width") / 2,
-        manual_field.property("height") / 2,
-    )
-).toPoint()
-QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, manual_field_center)
-for ch in "win+l":
-    QTest.keyClick(window, Qt.Key_Plus if ch == "+" else ord(ch))
-    app.processEvents()
-assert manual_field.property("text") == "win+l"
-manual_screenshot = os.environ.get("RC003_MANUAL_SHORTCUT_SCREENSHOT", "")
-if manual_screenshot:
-    assert _render(window, app).save(manual_screenshot)
-confirm_center = manual_confirm.mapToScene(
-    QPointF(
-        manual_confirm.property("width") / 2,
-        manual_confirm.property("height") / 2,
-    )
-).toPoint()
-QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, confirm_center)
-_wait_until(
-    window,
-    app,
-    lambda: not bool(recorder.property("visible")),
-    "manual shortcut confirmation did not close the recorder",
-)
-assert combo.property("editText") == "Win + L"
-assert editor.property("primaryText") == "Win + L"
-assert FakeHotkeyCapture.start_calls == 1
-assert FakeHotkeyCapture.stop_calls == 1
-
-# Feed captured key identities through the actual QML recorder. An unsupported
-# key stays in the recorder for correction and cannot replace the draft.
-QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, record_center)
-_wait_until(window, app, lambda: controller.hotkeyCaptureReady, "capture not ready")
-controller._on_hotkey_capture_result((controller._input_operation_token, "numpad_enter"))
-_wait_until(window, app, lambda: not controller.hotkeyCaptureActive, "capture did not stop")
-assert recorder.property("visible")
-assert recorder.property("inputMode") == "manual"
-assert "小键盘 Enter" in recorder.property("manualErrorText")
-assert editor.property("primaryText") == "Win + L"
-for invalid, reason in (("Ctrl+A+A", "一个普通键"), ("Ctrl+vk_00", "无效"),
-                        ("Ctrl+小键盘 ←", "NumLock")):
-    manual_field.setProperty("text", invalid)
-    QMetaObject.invokeMethod(recorder, "commitManualShortcut", Qt.ConnectionType.DirectConnection)
-    app.processEvents()
-    assert recorder.property("visible")
-    assert manual_field.property("text") == invalid
-    assert reason in recorder.property("manualErrorText")
-    assert editor.property("primaryText") == "Win + L"
-    assert model.to_display_map()["mic"] == "语音1"
-manual_field.setProperty("text", "lctrl+[")
-QMetaObject.invokeMethod(recorder, "commitManualShortcut", Qt.ConnectionType.DirectConnection)
-_wait_until(window, app, lambda: not recorder.property("visible"), "corrected capture did not close")
-assert combo.property("editText") == "左 Ctrl + ["
-QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, record_center)
-_wait_until(window, app, lambda: controller.hotkeyCaptureReady, "capture not ready")
-controller._on_hotkey_capture_result((controller._input_operation_token, "lctrl+left_bracket"))
-_wait_until(window, app, lambda: not recorder.property("visible"), "captured bracket did not close")
-assert combo.property("editText") == "左 Ctrl + ["
-assert model.to_display_map()["mic"] == "语音1"
-
-# Choose real preset rows through each visible ComboBox popup. The editable
-# field and backing model must change as soon as the popup activates the row;
-# clicking the dialog's "完成" button is deliberately deferred until after
-# every assertion below.
-assert model.to_display_map()["mic"] == "语音1"
-assert double_combo.property("visible") and long_combo.property("visible")
-
-_select_combo_option(
-    window,
-    app,
-    double_combo,
-    list(controller.secondaryActionOptionsFor("mic")).index("f5"),
-)
-assert double_combo.property("editText") == "F5"
-double_indicator = double_combo.mapToScene(
-    QPointF(double_combo.property("width") - 8, double_combo.property("height") / 2)
-).toPoint()
-QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, double_indicator)
-app.processEvents()
-assert double_combo.property("down")
-QTest.keyClick(window, Qt.Key_Home)
-for _ in range(
-    list(controller.secondaryActionOptionsFor("mic")).index("元素导航开关")
-):
-    QTest.keyClick(window, Qt.Key_Down)
-QTest.keyClick(window, Qt.Key_Return)
-for _ in range(3):
-    window.grabWindow()
-    app.processEvents()
-assert double_combo.property("editText") == "元素导航开关"
-
-_select_combo_option(
-    window,
-    app,
-    double_combo,
-    list(controller.secondaryActionOptionsFor("mic")).index("Escape"),
-)
-assert double_combo.property("editText") == "Escape"
-assert editor.property("doubleText") == "Escape"
-assert model.to_secondary_display_map()["mic"]["double_click"] == ""
-
-_select_combo_option(
-    window,
-    app,
-    long_combo,
-    list(controller.secondaryActionOptionsFor("mic")).index("回车"),
-)
-assert long_combo.property("editText") == "回车"
-assert editor.property("longText") == "回车"
-assert model.to_secondary_display_map()["mic"]["long_press"] == ""
-
-# Real mouse click into the ComboBox's editable text area -
-# forceActiveFocus() on the ComboBox item alone is NOT equivalent (proven
-# while writing this test: it does not hand keyboard focus to the internal
-# editable TextInput the way a real click does).
-center = combo.mapToScene(
-    QPointF(combo.property("width") / 2, combo.property("height") / 2)
-).toPoint()
-QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, center)
-app.processEvents()
-assert combo.property("activeFocus"), "click did not focus the ComboBox"
-
-# Select all existing text, then really TYPE the replacement - one real
-# QKeyEvent per character, through the window, exactly as a user's
-# keystrokes would arrive. Lowercase ASCII ordinals (not the Qt.Key_X enum,
-# whose values are the UPPERCASE-letter ASCII codes) so the synthesized
-# text matches real lowercase typing exactly.
-QTest.keySequence(window, QKeySequence.SelectAll)
-app.processEvents()
-typed = "ctrl+shift+["
-canonical = "ctrl+shift+left_bracket"
-for ch in typed:
-    QTest.keyClick(window, Qt.Key_Plus if ch == "+" else ord(ch))
-    app.processEvents()
-
-assert combo.property("editText") == typed
-assert editor.property("primaryText") == typed
-assert model.to_display_map()["mic"] == "语音1"
-for _ in range(3):
-    window.grabWindow()
-    app.processEvents()
-assert double_combo.property("visible") and long_combo.property("visible")
-assert double_combo.property("enabled") and long_combo.property("enabled")
-
-editor_save_button = _find_child_by_object_name(window, "actionEditorSaveButton")
-assert editor_save_button is not None
-done_center = editor_save_button.mapToScene(
-    QPointF(
-        editor_save_button.property("width") / 2,
-        editor_save_button.property("height") / 2,
-    )
-).toPoint()
-QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, done_center)
-assert not editor.property("visible")
-assert model.to_display_map()["mic"] == canonical
-assert model.to_secondary_display_map()["mic"]["double_click"] == "Escape"
-assert model.to_secondary_display_map()["mic"]["long_press"] == "回车"
-
 _wait_until(
     window,
     app,
     lambda: not controller.mappingDirty,
     "mapping edit did not auto-save after clicking 完成",
 )
-saved_view = _mapping_snapshot(
-    window,
-    app,
-    model,
-    controller,
-    "RC003_MAPPING_AFTER_SCREENSHOT",
-)
-
-QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, edit_center)
-_render(window, app, 3)
-assert combo.property("editText") == "Ctrl + Shift + ["
-QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, center)
-QTest.keyClick(window, Qt.Key_End)
-QTest.keyClick(window, Qt.Key_Backspace)
-QTest.keyClick(window, Qt.Key_BracketRight)
-assert combo.property("editText") == "Ctrl + Shift + ]"
-assert model.to_display_map()["mic"] == canonical
-QMetaObject.invokeMethod(editor, "close", Qt.ConnectionType.DirectConnection)
-_render(window, app, 3)
-
 assert not controller.settingsDirty
-assert controller.errorMessage == "", f"auto-save reported a validation error: {controller.errorMessage}"
-assert "按键映射已自动保存" in controller.statusMessage
+assert controller.errorMessage == "", (
+    f"auto-save reported a validation error: {controller.errorMessage}"
+)
+# 「完成」统一落盘：草稿里的双击/长按动作此刻写进模型。
+assert model.to_secondary_display_map()["mic"]["double_click"] == "Escape"
+assert model.to_secondary_display_map()["mic"]["long_press"] == "回车"
 
-# Opening an old row and clicking Done must keep all three gestures. The
-# unrelated microphone edit above must not have rewritten these values.
+# 打开一条旧映射：没有改动时「完成」置灰不可点，✕ 直接关，文件不能被写坏。
 legacy_saved = m.config.load_key_bindings(legacy_mapping_path)
 assert legacy_saved["bindings"]["power"] == legacy_primary
 assert legacy_saved["secondary_bindings"]["power"] == legacy_secondary
 legacy_before = legacy_mapping_path.read_bytes()
-power_edit = _find_child_by_object_name(window, "editMapping_power")
-power_center = power_edit.mapToScene(
-    QPointF(power_edit.property("width") / 2, power_edit.property("height") / 2)
-).toPoint()
-QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, power_center)
-_wait_until(window, app, lambda: bool(editor.property("opened")), "legacy editor did not open")
-assert combo.property("editText") == "左 Ctrl（键码 0xA2） + Shift"
-assert double_combo.property("editText") == "Ctrl（键码 0x11）"
-assert long_combo.property("editText") == "vk_00"
+assert model.to_display_map()["power"] == "vk_a2+shift"
+editor = _open_panel("editMapping_power")
 assert editor.property("validationError") == ""
-done_center = editor_save_button.mapToScene(
-    QPointF(editor_save_button.property("width") / 2, editor_save_button.property("height") / 2)
-).toPoint()
-QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, done_center)
+legacy_save_button = _find_child_by_object_name(window, "actionEditorSaveButton")
+assert legacy_save_button is not None
+assert not legacy_save_button.property("enabled")
+_click_item(
+    _find_child_by_object_name(window, "actionEditorCloseButton"),
+    "actionEditorCloseButton",
+)
 _wait_until(window, app, lambda: not editor.property("visible"), "legacy editor did not close")
 assert not controller.mappingDirty
 assert legacy_mapping_path.read_bytes() == legacy_before
@@ -12831,7 +12568,6 @@ assert _find_child_by_object_name(window, "mappingChip_global") is not None
 assert _find_child_by_object_name(window, "comboActionEditor_up") is None
 
 print(json.dumps({
-    "saved": saved_view,
     "current_option": current_option_state,
     "manual_capture": {
         "starts": FakeHotkeyCapture.start_calls,
@@ -12844,12 +12580,12 @@ print(json.dumps({
 @unittest.skipUnless(_HAS_PYSIDE6, _SKIP_REASON)
 class ButtonsPageDirectAutoSaveIntegrationTests(unittest.TestCase):
     """XRBM-030 RETRY 1 blocker 1: a REAL Qt/QML interaction test (see
-    ``_DIRECT_AUTO_SAVE_PROBE_SCRIPT`` above) proving a user can type a custom
-    chord through the microphone row's matrix editor and click "完成"
-    WITHOUT ever pressing Enter, then rely on automatic persistence. It also
-    locks the fix15 UI contract: the
-    single host-shortcut field exists, the old lifecycle controls do not, and
-    the editor exposes primary/double/long controls.
+    ``_DIRECT_AUTO_SAVE_PROBE_SCRIPT`` above) proving a user can change a
+    gesture's action through the Logi-Options+-style side panel, record a
+    custom chord, and click "完成" WITHOUT ever pressing Enter, then rely on
+    automatic persistence. It also locks the redesigned editor contract: the
+    top is the key card whose cells pick 单击/双击/长按, the old three-row
+    combo/note grid is gone, and the action categories below assign on click.
     """
 
     def test_typed_chord_auto_saves_after_done_with_no_enter_pressed(self):
@@ -12886,7 +12622,7 @@ class ButtonsPageDirectAutoSaveIntegrationTests(unittest.TestCase):
             self.assertEqual(action.keys, ("ctrl", "shift", "left_bracket"))
             self.assertEqual(
                 visual["manual_capture"],
-                {"starts": 3, "stops": 3},
+                {"starts": 2, "stops": 2},
             )
 
 
@@ -13239,47 +12975,34 @@ click_point = power_card.mapToScene(
 ).toPoint()
 QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, click_point)
 _render(window, app, 5)
+# 编辑器现在是右侧抽屉，滑入有动画：等它停稳再取几何位置。
+QTest.qWait(450)
+_render(window, app, 5)
 
 power_hotspot = _find(window, "photoHotspot_power")
 ok_hotspot = _find(window, "photoHotspot_ok")
-power_marker = _find(window, "photoHotspotMarker_power")
-ok_marker = _find(window, "photoHotspotMarker_ok")
+power_highlight = _find(window, "photoHotspotHighlight_power")
+ok_highlight = _find(window, "photoHotspotHighlight_ok")
 editor = _find(window, "actionEditorDialog")
 assert power_hotspot is not None, "Power photo hotspot not found"
 assert ok_hotspot is not None, "OK photo hotspot not found"
-assert power_marker is not None, "Power photo marker not found"
-assert ok_marker is not None, "OK photo marker not found"
+assert power_highlight is not None, "Power photo highlight not found"
+assert ok_highlight is not None, "OK photo highlight not found"
 assert editor is not None
-primary_title = _find(window, "actionEditorPrimaryTitle")
-primary_combo = _find(window, "actionEditorPrimaryCombo")
-assert primary_title is not None and primary_combo is not None
-primary_title_center = primary_title.mapToScene(QPointF(
-    primary_title.property("width") / 2.0,
-    primary_title.property("height") / 2.0,
-)).toPoint()
-QTest.mouseMove(window, primary_title_center)
-QTest.qWait(520)
-_render(window, app, 5)
-primary_help_background = _find(window, "actionEditorPrimaryHelp_background")
-assert primary_help_background is not None
-primary_help_geometry = {
-    "tooltip": _geometry(primary_help_background),
-    "input": _geometry(primary_combo),
-}
 editor_screenshot = os.environ.get("RC003_MAPPING_EDITOR_SCREENSHOT")
 if editor_screenshot:
     _render(window, app, 2)
     assert window.grabWindow().save(editor_screenshot)
 
 QTest.mouseMove(window, QPoint(2, 2))
-primary_combo.setProperty("editText", "not_a_key")
+# 面板里已经没有下拉框：直接改草稿字段再保存，验证错误提示。
+editor.setProperty("primaryText", "not_a_key")
 assert QMetaObject.invokeMethod(editor, "saveDraft", Qt.ConnectionType.DirectConnection)
 _render(window, app, 5)
 validation_error = _find(window, "actionEditorValidationError")
-editor_cancel_button = _find(window, "actionEditorCancelButton")
 editor_save_button = _find(window, "actionEditorSaveButton")
 assert validation_error is not None
-assert editor_cancel_button is not None and editor_save_button is not None
+assert editor_save_button is not None
 assert validation_error.property("visible")
 assert validation_error.property("text") == (
     "单击：不认识按键“not_a_key”，请检查键名或使用按键录入。"
@@ -13303,7 +13026,6 @@ results_out = {
     "card_count": sum(bool(item.property("visible")) for item in cards.values()),
     "selected_after_power_click": controller.property("selectedButtonId"),
     "editor_visible": bool(editor.property("visible")),
-    "primary_help": primary_help_geometry,
     "editor_error": {
         "dialog": {
             "x": float(editor.property("x")),
@@ -13315,7 +13037,7 @@ results_out = {
             ),
         },
         "message": _geometry(validation_error),
-        "cancel": _geometry(editor_cancel_button),
+        "save": _geometry(editor_save_button),
         "save_enabled": bool(editor_save_button.property("enabled")),
         "text": str(validation_error.property("text")),
     },
@@ -13345,8 +13067,8 @@ results_out = {
         "frame": _geometry(photo_frame),
         "painted_width": photo_image.property("paintedWidth"),
         "painted_height": photo_image.property("paintedHeight"),
-        "power_marker_visible": power_marker.property("visible"),
-        "ok_marker_visible": ok_marker.property("visible"),
+        "power_highlight_visible": power_highlight.property("visible"),
+        "ok_highlight_visible": ok_highlight.property("visible"),
         "hotspots": {
             button_id: _geometry(item)
             for button_id, item in hotspots.items()
@@ -13407,16 +13129,6 @@ class ButtonsPageMappingCardTests(unittest.TestCase):
         )
         self.assertTrue(data["editor_visible"])
 
-    def test_editor_help_tooltip_is_compact_and_does_not_cover_the_input(self):
-        for style in ("Basic", "FluentWinUI3"):
-            with self.subTest(style=style):
-                data = self._run_probe(880, 660, style)
-                tooltip = data["primary_help"]["tooltip"]
-                action_input = data["primary_help"]["input"]
-                self.assertTrue(tooltip["visible"])
-                self.assertLessEqual(tooltip["width"], 274)
-                self.assertLessEqual(tooltip["bottom"], action_input["y"])
-
     def test_editor_error_fits_above_buttons_in_the_minimum_window(self):
         for style in ("Basic", "FluentWinUI3"):
             with self.subTest(style=style):
@@ -13430,7 +13142,7 @@ class ButtonsPageMappingCardTests(unittest.TestCase):
                 self.assertTrue(error["message"]["visible"])
                 self.assertLessEqual(
                     error["message"]["bottom"],
-                    error["cancel"]["y"],
+                    error["save"]["y"],
                 )
                 self.assertGreaterEqual(error["dialog"]["y"], 0)
                 self.assertLessEqual(
@@ -13440,8 +13152,8 @@ class ButtonsPageMappingCardTests(unittest.TestCase):
 
     def test_selected_power_is_marked_at_its_calibrated_photo_position(self):
         data = self._run_probe(880, 660)
-        self.assertTrue(data["photo"]["power_marker_visible"])
-        self.assertFalse(data["photo"]["ok_marker_visible"])
+        self.assertTrue(data["photo"]["power_highlight_visible"])
+        self.assertFalse(data["photo"]["ok_highlight_visible"])
         self.assertAlmostEqual(data["photo"]["power_center_error_x"], 0, delta=1)
         self.assertAlmostEqual(data["photo"]["power_center_error_y"], 0, delta=1)
 

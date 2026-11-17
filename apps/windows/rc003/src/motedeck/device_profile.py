@@ -27,7 +27,7 @@ BLUETOOTH_NAMES = frozenset(
 )
 
 # 小米遥控器2（RC001）：按键集合、HID usage 与 RC003 完全一致，只有蓝牙广播名
-# 不同。"MI RC" 两款都会广播，配对扫描里 RC003 先判定，所以它归到 Pro 名下。
+# 不同。"MI RC" 两款都会广播；未读到型号串时按遥控器2兜底显示，不冒认 2 Pro。
 RC001_DISPLAY_NAME = "小米蓝牙遥控器 2"
 RC001_BLUETOOTH_NAMES = frozenset(
     {

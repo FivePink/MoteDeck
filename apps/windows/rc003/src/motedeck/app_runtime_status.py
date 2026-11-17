@@ -35,6 +35,9 @@ class RuntimeStatusMixin:
         # 启动时让话筒键警告对齐当前生效的映射：绑着普通动作就直接置上，
         # 不必等第一次按键事件；绑着语音键则保持干净。
         self._publish_voice_mic_blocked_from_mapping()
+        # 启动即上报当前语音键槽位：设置端托盘徽章刚连上就有"当前模式"
+        # 可显示，不用等第一次切换；取值口径与按键切换一致。
+        self._set_runtime_voice_active_slot(self._active_voice_slot())
         heartbeat = self._event_loop.create_task(
             self._runtime_status_heartbeat()
         )
@@ -108,6 +111,7 @@ class RuntimeStatusMixin:
                     last_button_at=self._runtime_last_button_at,
                     last_button_source=self._runtime_last_button_source,
                     voice_active=self._runtime_voice_active,
+                    voice_active_slot=self._runtime_voice_active_slot,
                     voice_runtime_state=self._runtime_voice_state,
                     voice_runtime_provider=self._runtime_voice_provider,
                     voice_runtime_updated_at=self._runtime_voice_updated_at,
@@ -146,6 +150,21 @@ class RuntimeStatusMixin:
                 return
             self._runtime_voice_active = active
         self._publish_runtime_status()
+
+    def _set_runtime_voice_active_slot(self, slot: object) -> None:
+        """记录当前生效的语音键槽位，供设置端托盘徽章跟随。"""
+
+        try:
+            resolved = int(slot)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            resolved = -1
+        with self._runtime_status_lock:
+            if resolved == self._runtime_voice_active_slot:
+                return
+            self._runtime_voice_active_slot = resolved
+        self._publish_runtime_status()
+        # 进程内桥接：槽位一变就直推设置端，托盘徽章切换不再等轮询。
+        bridge_runtime_status.notify_voice_active_slot_changed(resolved)
 
     def _set_runtime_voice_mic_blocked(self, reason: str) -> None:
         """Publish why unsolicited physical-mic audio is being dropped.

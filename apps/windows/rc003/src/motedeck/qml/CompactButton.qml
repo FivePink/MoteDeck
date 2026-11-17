@@ -90,7 +90,9 @@ Button {
                     : (root.down || root.hovered ? root.tokens.surfaceMuted : root.tokens.surface)
         border.width: root.flat || root.highlighted ? 0 : root.tokens.hairlineWidth
         border.color: root.inverse ? "#f2f2f2" : root.tokens.borderStrong
-        opacity: root.enabled ? 1 : 0.55
+        // 禁用态压暗：浅色模式下墨黑实心按钮压到 55% 灰仍偏深，降到 40% 更浅；
+        // 深色模式维持原样。
+        opacity: root.enabled ? 1 : (root.tokens.darkMode ? 0.55 : 0.4)
         Behavior on color { ColorAnimation { duration: 80 } }
 
         // 键盘/遥控器导航的焦点环，鼠标点击时不显示

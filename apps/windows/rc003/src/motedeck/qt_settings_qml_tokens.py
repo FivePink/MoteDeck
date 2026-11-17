@@ -19,6 +19,7 @@ from PySide6.QtCore import (
     QEvent,
     QModelIndex,
     QObject,
+    QPointF,
     QStandardPaths,
     QTimer,
     Qt,
@@ -26,7 +27,7 @@ from PySide6.QtCore import (
     Signal,
     Slot,
 )
-from PySide6.QtGui import QIcon
+from PySide6.QtGui import QCursor, QIcon
 from PySide6.QtQml import QQmlApplicationEngine, qmlRegisterSingletonInstance
 from PySide6.QtQuickControls2 import QQuickStyle
 from PySide6.QtWidgets import QApplication

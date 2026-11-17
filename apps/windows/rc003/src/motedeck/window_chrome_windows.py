@@ -211,13 +211,20 @@ def apply_native_window_icon(
     return True
 
 
-def install_frameless_window(window: object, *, platform: Optional[str] = None) -> bool:
-    """把系统标题栏并入客户区，同时保留系统阴影、圆角与边缘拖拽缩放。
+def install_frameless_window(
+    window: object,
+    *,
+    platform: Optional[str] = None,
+    resizable: bool = True,
+) -> bool:
+    """把系统标题栏并入客户区，同时保留系统阴影与圆角。
 
     规则：
       - WM_NCCALCSIZE 返回 0：客户区铺满窗口（含原标题栏区域）。
-      - WM_NCHITTEST：距窗口边缘 6px 内返回缩放热区，其余交给 QML。
-      - 拖动由 QML 的 startSystemMove() 发起，因此最大化按钮等仍可点击。
+      - WM_NCHITTEST：resizable 时距窗口边缘 6px 内返回缩放热区，其余交给
+        QML；固定尺寸（resizable=False）时一律交回客户区，压掉
+        WS_THICKFRAME 自带的缩放热区（阴影/圆角不受影响）。
+      - 拖动由 QML 的 startSystemMove() 发起，最小化/关闭按钮仍可点击。
     """
 
     current_platform = sys.platform if platform is None else platform
@@ -265,7 +272,11 @@ def install_frameless_window(window: object, *, platform: Optional[str] = None) 
                     self._apply_max_bounds(hwnd, msg.lParam)
                     return (True, 0)
                 if msg.message == _WM_NCHITTEST and not user32.IsZoomed(hwnd):
-                    return (True, self._hit_test(hwnd, msg.lParam))
+                    if resizable:
+                        return (True, self._hit_test(hwnd, msg.lParam))
+                    # 固定尺寸：接管后一律交回客户区，压掉 WS_THICKFRAME
+                    # 自带的边缘缩放热区。
+                    return (True, _HTCLIENT)
             except (OSError, TypeError, ValueError):
                 return (False, 0)
             return (False, 0)
@@ -293,12 +304,15 @@ def install_frameless_window(window: object, *, platform: Optional[str] = None) 
             """Qt 的最小尺寸依赖这条消息，自行接手后要补回去。"""
 
             bounds = _MINMAXINFO.from_address(int(lparam))
-            bounds.ptMinTrackSize.x = max(
-                bounds.ptMinTrackSize.x, int(round(window.minimumWidth() * scale))  # type: ignore[attr-defined]
-            )
-            bounds.ptMinTrackSize.y = max(
-                bounds.ptMinTrackSize.y, int(round(window.minimumHeight() * scale))  # type: ignore[attr-defined]
-            )
+            min_w = int(round(window.minimumWidth() * scale))  # type: ignore[attr-defined]
+            min_h = int(round(window.minimumHeight() * scale))  # type: ignore[attr-defined]
+            bounds.ptMinTrackSize.x = max(bounds.ptMinTrackSize.x, min_w)
+            bounds.ptMinTrackSize.y = max(bounds.ptMinTrackSize.y, min_h)
+            if not resizable:
+                # 固定尺寸：max track 也钉死在默认大小，系统级最大化
+                # （Win+Up 等）也只能回到同一个尺寸。
+                bounds.ptMaxTrackSize.x = min(bounds.ptMaxTrackSize.x, min_w)
+                bounds.ptMaxTrackSize.y = min(bounds.ptMaxTrackSize.y, min_h)
 
         def _hit_test(self, handle, lparam):
             x = ctypes.c_short(lparam & 0xFFFF).value

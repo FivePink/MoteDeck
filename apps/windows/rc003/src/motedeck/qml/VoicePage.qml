@@ -554,6 +554,12 @@ Item {
         }
     }
 
+    // 语音键徽章窗口：自定义方框里的单字/图标和字色。
+    VoiceKeyBadgeDialog {
+        id: voiceKeyBadgeDialog
+        tokens: root.tokens
+    }
+
     // 语音键列表：默认一条，可继续添加。每条都有自己的名称、快捷键和
     // 麦克风来源；命名会同步到按键页的动作列表。
     SettingsDialog {
@@ -686,6 +692,64 @@ Item {
                                             if (checked !== keyCard.entryEnabled)
                                                 SettingsController.setVoiceKeyConfigEnabled(
                                                     keyCard.slot, checked)
+                                        }
+                                    }
+
+                                    // 徽章：方框里的单字/图标，托盘指示当前
+                                    // 语音模式也用同一份；点开可自定义字和颜色。
+                                    AbstractButton {
+                                        id: voiceKeyBadgeButton
+                                        objectName: "voiceKeyBadgeButton_" + keyCard.slot
+                                        Layout.alignment: Qt.AlignVCenter
+                                        Layout.preferredWidth: 26
+                                        Layout.preferredHeight: 26
+                                        hoverEnabled: true
+                                        enabled: !root.configurationWriteBusy
+                                        Accessible.name:
+                                            qsTr("语音键徽章：%1")
+                                                .arg(String(keyCard.modelData.badgeDisplay || ""))
+                                        onClicked: voiceKeyBadgeDialog.openForSlot(
+                                            keyCard.slot)
+                                        contentItem: Rectangle {
+                                            radius: 6
+                                            color: voiceKeyBadgeButton.hovered
+                                                ? root.tokens.buttonHover
+                                                : root.tokens.surface
+                                            border.width: 1
+                                            border.color:
+                                                voiceKeyBadgeButton.hovered
+                                                    ? root.tokens.accent
+                                                    : root.tokens.border
+
+                                            Label {
+                                                anchors.centerIn: parent
+                                                visible:
+                                                    String(keyCard.modelData.badgeDisplay || "").length > 0
+                                                text: String(
+                                                    keyCard.modelData.badgeDisplay || "")
+                                                font.family:
+                                                    String(keyCard.modelData.badgeGlyph || "").length > 0
+                                                        ? (Qt.fontFamilies().indexOf(
+                                                               "Segoe Fluent Icons") >= 0
+                                                            ? "Segoe Fluent Icons"
+                                                            : "Segoe MDL2 Assets")
+                                                        : root.tokens.fontFamily
+                                                font.pixelSize:
+                                                    String(keyCard.modelData.badgeGlyph || "").length > 0
+                                                        ? 13 : 12
+                                                font.bold:
+                                                    String(keyCard.modelData.badgeGlyph || "").length === 0
+                                                renderType: Text.QtRendering
+                                                color:
+                                                    String(keyCard.modelData.badgeColor || "").length > 0
+                                                        ? keyCard.modelData.badgeColor
+                                                        : root.tokens.textPrimary
+                                                horizontalAlignment: Text.AlignHCenter
+                                                verticalAlignment: Text.AlignVCenter
+                                            }
+                                        }
+                                        HoverHandler {
+                                            cursorShape: Qt.PointingHandCursor
                                         }
                                     }
 
@@ -1959,22 +2023,21 @@ Item {
                         }
 
                         InlineSettingsRow {
-                            objectName: "voiceOtherKeySwitchRow"
+                            objectName: "voiceTrayBadgeRow"
                             tokens: root.tokens
-                            titleText: qsTr("使用其他按键切换模式")
-                            descriptionText: qsTr("在按键设置里指定切换键")
+                            titleText: qsTr("托盘指示当前模式")
+                            descriptionText: qsTr("托盘图标实时显示当前语音键徽章")
                             showDivider: true
 
                             CompactSwitch {
-                                objectName: "voiceOtherKeySwitchToggle"
+                                objectName: "voiceTrayBadgeSwitch"
                                 tokens: root.tokens
-                                checked: SettingsController.voiceOtherKeySwitch
+                                checked: SettingsController.voiceTrayBadgeEnabled
                                 enabled: !root.configurationWriteBusy
-                                    && !root.voiceHotkeyBusy
-                                Accessible.name: qsTr("使用其他按键切换模式")
+                                Accessible.name: qsTr("在托盘指示当前语音模式")
                                 onToggled: {
-                                    if (checked !== SettingsController.voiceOtherKeySwitch)
-                                        SettingsController.setVoiceOtherKeySwitch(checked)
+                                    if (checked !== SettingsController.voiceTrayBadgeEnabled)
+                                        SettingsController.setVoiceTrayBadgeEnabled(checked)
                                 }
                             }
                         }
@@ -2429,5 +2492,4 @@ Item {
             onTriggered: voiceMicBlockedBubble.dismissed = true
         }
     }
-
 }

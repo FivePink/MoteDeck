@@ -103,6 +103,7 @@ class BridgeRuntimeStatus:
     last_button_at: Optional[float] = None
     last_button_source: str = ""
     voice_active: bool = False
+    voice_active_slot: int = -1
     voice_runtime_state: str = VOICE_RUNTIME_NOT_TESTED
     voice_runtime_provider: str = ""
     voice_runtime_updated_at: Optional[float] = None
@@ -256,6 +257,41 @@ def button_receiver_usable(
     )
 
 
+# 进程内桥接的槽位变化直推通道：桥接工作线程是唯一发布者，设置端托盘
+# 徽章注册监听器后不再等轮询，切换语音键的瞬间就能换图标。
+_VOICE_SLOT_LISTENERS_LOCK = threading.Lock()
+_VOICE_SLOT_LISTENERS: list[Callable[[int], None]] = []
+
+
+def add_voice_active_slot_listener(callback: Callable[[int], None]) -> None:
+    """Register one slot-change callback (invoked on the bridge thread)."""
+
+    with _VOICE_SLOT_LISTENERS_LOCK:
+        if callback not in _VOICE_SLOT_LISTENERS:
+            _VOICE_SLOT_LISTENERS.append(callback)
+
+
+def remove_voice_active_slot_listener(callback: Callable[[int], None]) -> None:
+    with _VOICE_SLOT_LISTENERS_LOCK:
+        try:
+            _VOICE_SLOT_LISTENERS.remove(callback)
+        except ValueError:
+            pass
+
+
+def notify_voice_active_slot_changed(slot: int) -> None:
+    """Fan out one slot change; listener failures never break the bridge."""
+
+    with _VOICE_SLOT_LISTENERS_LOCK:
+        listeners = tuple(_VOICE_SLOT_LISTENERS)
+    for callback in listeners:
+        try:
+            callback(int(slot))
+        except Exception:
+            # 监听器只影响托盘刷新速度，任何异常都不能波及语音链路。
+            pass
+
+
 def publish_status(
     config_root: Path,
     state: BridgeConnectionState,
@@ -268,6 +304,7 @@ def publish_status(
     last_button_at: Optional[float] = None,
     last_button_source: str = "",
     voice_active: bool = False,
+    voice_active_slot: int = -1,
     voice_runtime_state: str = VOICE_RUNTIME_NOT_TESTED,
     voice_runtime_provider: str = "",
     voice_runtime_updated_at: Optional[float] = None,
@@ -307,6 +344,7 @@ def publish_status(
         last_button_at=last_button_at,
         last_button_source=str(last_button_source),
         voice_active=bool(voice_active),
+        voice_active_slot=int(voice_active_slot),
         voice_runtime_state=str(voice_runtime_state),
         voice_runtime_provider=str(voice_runtime_provider),
         voice_runtime_updated_at=voice_runtime_updated_at,
@@ -338,6 +376,7 @@ def publish_status(
                 "last_button_at": status.last_button_at,
                 "last_button_source": status.last_button_source,
                 "voice_active": status.voice_active,
+                "voice_active_slot": status.voice_active_slot,
                 "voice_runtime_state": status.voice_runtime_state,
                 "voice_runtime_provider": status.voice_runtime_provider,
                 "voice_runtime_updated_at": status.voice_runtime_updated_at,
@@ -417,6 +456,12 @@ def _read_status_file(path: Path) -> Optional[BridgeRuntimeStatus]:
     voice_active = payload.get("voice_active", False)
     if not isinstance(voice_active, bool):
         return None
+    voice_active_slot = payload.get("voice_active_slot", -1)
+    if (
+        not isinstance(voice_active_slot, int)
+        or isinstance(voice_active_slot, bool)
+    ):
+        voice_active_slot = -1
     voice_runtime_updated_at = payload.get("voice_runtime_updated_at")
     if voice_runtime_updated_at is not None and (
         not isinstance(voice_runtime_updated_at, (int, float))
@@ -452,6 +497,7 @@ def _read_status_file(path: Path) -> Optional[BridgeRuntimeStatus]:
         ),
         last_button_source=string_fields["last_button_source"],
         voice_active=voice_active,
+        voice_active_slot=voice_active_slot,
         voice_runtime_state=string_fields["voice_runtime_state"],
         voice_runtime_provider=string_fields["voice_runtime_provider"],
         voice_mic_blocked_reason=string_fields["voice_mic_blocked_reason"],

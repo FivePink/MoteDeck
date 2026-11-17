@@ -44,8 +44,10 @@ _BUTTON_NAVIGATION_SINGLE_KEYS = {
 # Direction, backspace and volume keys keep the original "连击" behaviour under
 # SendInput: a hold replays the whole click (down+up) at the machine's keyboard
 # repeat rate, because SendInput cannot emulate the sustained key press a real
-# Windows hold produces.  The driver-level backends (WinUHid and Interception)
-# do emulate that hold, so the same buttons stay sustained there (see
+# Windows hold produces - an injected key-down that is never released would
+# just look like one short press, so holding backspace could not keep deleting
+# text.  The driver-level backends (WinUHid and Interception) do emulate that
+# hold, so the same buttons stay sustained there (see
 # ``_begin_button_key_hold``).
 _SENDINPUT_CLICK_REPEAT_KINDS = frozenset(
     {

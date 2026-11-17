@@ -295,6 +295,7 @@ class RC003App(
         self._runtime_last_button_at: Optional[float] = None
         self._runtime_last_button_source = ""
         self._runtime_voice_active = False
+        self._runtime_voice_active_slot = -1
         self._runtime_voice_state = bridge_runtime_status.VOICE_RUNTIME_NOT_TESTED
         self._runtime_voice_provider = ""
         self._runtime_voice_mic_blocked = ""

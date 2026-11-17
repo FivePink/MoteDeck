@@ -20,6 +20,10 @@ AbstractButton {
     property bool selected: false
     property bool voiceAction: false
     property bool exposeObjectNames: true
+    // 放在右侧面板里当手势选择器时打开：点某个格就切到那个手势。
+    property bool selectableGestures: false
+    property string activeGesture: "single_click"
+    signal gesturePicked(string gesture)
 
     hoverEnabled: true
     implicitWidth: 300
@@ -61,6 +65,7 @@ AbstractButton {
         property string text: ""
         property bool empty: false
         property bool mono: false
+        property bool active: false
         property string labelObjectName: ""
         property alias label: valueLabel
 
@@ -72,9 +77,12 @@ AbstractButton {
             anchors.fill: parent
             visible: !block.empty
             radius: 7
-            color: root.selected ? root.tokens.surface : root.tokens.surfaceMuted
-            border.width: root.selected ? root.tokens.hairlineWidth : 0
-            border.color: root.tokens.accentLine
+            color: block.active
+                ? root.tokens.accentSoft
+                : root.selected ? root.tokens.surface : root.tokens.surfaceMuted
+            border.width: block.active || root.selected
+                ? root.tokens.hairlineWidth : 0
+            border.color: block.active ? root.tokens.accent : root.tokens.accentLine
         }
 
         Shape {
@@ -119,10 +127,13 @@ AbstractButton {
 
     component GestureCell: ColumnLayout {
         id: cell
+        property string gestureId: ""
         property string gestureLabel: ""
         property string bindingText: ""
         property string noteText: ""
         property string valueObjectName: ""
+        readonly property bool active:
+            root.selectableGestures && root.activeGesture === cell.gestureId
         readonly property bool empty:
             !bindingText || bindingText.trim().length === 0
             || bindingText.trim() === qsTr("未设置")
@@ -138,6 +149,21 @@ AbstractButton {
         Layout.preferredWidth: 1
         Layout.alignment: Qt.AlignVCenter
         spacing: 2
+        // 面板里没选中的手势格淡一些；鼠标拂过时提亮，引导点击切换。
+        opacity: !root.selectableGestures || cell.active
+            ? 1.0 : (cellHover.hovered ? 0.85 : 0.45)
+        Behavior on opacity { NumberAnimation { duration: 120 } }
+
+        // 面板里当手势开关用：点这个格就是把动作写给这个手势。
+        TapHandler {
+            enabled: root.selectableGestures
+            onTapped: root.gesturePicked(cell.gestureId)
+        }
+        HoverHandler {
+            id: cellHover
+            enabled: root.selectableGestures
+            cursorShape: Qt.PointingHandCursor
+        }
 
         UiLabel {
             id: gestureTitle
@@ -146,7 +172,7 @@ AbstractButton {
             Layout.fillWidth: true
             Layout.preferredHeight: 14
             text: cell.gestureLabel
-            color: root.tokens.textTertiary
+            color: cell.active ? root.tokens.accent : root.tokens.textTertiary
             font.pixelSize: root.tokens.fontSizeSmall
             font.weight: Font.Normal
             lineHeight: 1.0
@@ -169,6 +195,7 @@ AbstractButton {
             text: cell.shownText
             empty: cell.empty
             mono: !cell.empty && !cell.usingNote && root.isKeyCode(cell.shownText)
+            active: cell.active
             labelObjectName: cell.valueObjectName
         }
     }
@@ -259,6 +286,7 @@ AbstractButton {
 
         GestureCell {
             objectName: root.exposeObjectNames ? "mappingSingleCell_" + root.cardId : ""
+            gestureId: "single_click"
             gestureLabel: qsTr("单击")
             bindingText: root.singleText
             noteText: root.singleNoteText
@@ -269,6 +297,7 @@ AbstractButton {
         GestureCell {
             objectName: root.exposeObjectNames ? "mappingDoubleCell_" + root.cardId : ""
             visible: !root.voiceAction
+            gestureId: "double_click"
             gestureLabel: qsTr("双击")
             bindingText: root.doubleText
             noteText: root.doubleNoteText
@@ -279,6 +308,7 @@ AbstractButton {
         GestureCell {
             objectName: root.exposeObjectNames ? "mappingLongCell_" + root.cardId : ""
             visible: !root.voiceAction
+            gestureId: "long_press"
             gestureLabel: qsTr("长按")
             bindingText: root.longText
             noteText: root.longNoteText

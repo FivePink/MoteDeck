@@ -11,11 +11,13 @@ from __future__ import annotations
 import ctypes
 from ctypes import wintypes
 import os
+import struct
 import sys
 import threading
+from pathlib import Path
 from typing import Callable
 
-from . import device_catalog, product_identity, resources
+from . import bridge_runtime_status, config, device_catalog, product_identity, resources
 
 
 WM_DESTROY = 0x0002
@@ -28,6 +30,7 @@ WM_APP = 0x8000
 WM_TRAY_CALLBACK = WM_APP + 1
 
 NIM_ADD = 0x00000000
+NIM_MODIFY = 0x00000001
 NIM_DELETE = 0x00000002
 NIM_SETVERSION = 0x00000004
 NOTIFYICON_VERSION_4 = 4
@@ -45,6 +48,63 @@ MENU_EXIT_BRIDGE = 1002
 BRIDGE_TRAY_WINDOW_TITLE = "Remote Mic RC003 bridge tray"
 IMAGE_ICON = 1
 LR_LOADFROMFILE = 0x0010
+WM_TIMER = 0x0113
+# 设置窗口换图标（brand_icon_mode）后，托盘在几秒内跟着换，不要求重启。
+BRAND_ICON_POLL_MILLISECONDS = 600
+# 主进程托盘徽章 PNG 的文件名模式（每代渲染一个独立编号文件，与
+# qt_settings_controller 一致），取其中 mtime 最新的一份。
+VOICE_BADGE_PNG_GLOB = "voice-tray-badge-*.png"
+SM_CXSMICON = 49
+SM_CYSMICON = 50
+
+
+def _system_small_icon_size(user32) -> tuple[int, int]:
+    """托盘小图标的实际显示尺寸：Win10 是 16px，Win11 是 24px，系统还会
+    随 DPI 缩放调大。之前固定按 16px 加载，在 Win11 上徽章占不满托盘
+    格子所以显得小；改成按系统尺寸取。取不到时回退 16。"""
+
+    try:
+        width = int(user32.GetSystemMetrics(SM_CXSMICON))
+        height = int(user32.GetSystemMetrics(SM_CYSMICON))
+    except Exception:
+        width = height = 0
+    width = width if width >= 16 else 16
+    height = height if height >= 16 else width
+    return width, height
+
+
+def _brand_icon_classic() -> bool:
+    try:
+        return int(
+            config.load_config(config.config_path()).get("brand_icon_mode", 0)
+        ) == 1
+    except Exception:
+        return False
+
+
+def _config_mtime() -> float | None:
+    try:
+        return config.config_path().stat().st_mtime
+    except Exception:
+        return None
+
+
+def _png_as_icon_file(png: Path) -> Path | None:
+    """把主进程生成的徽章 PNG 包一层 ICO 容器后落盘。
+
+    LoadImageW 只认 ICO 文件头，不认裸 PNG；Vista 起图标条目允许直接
+    装 PNG 数据，所以加 22 字节头就够了。失败时返回 None（用默认图标）。
+    """
+
+    ico = png.with_name(png.stem + "-bridge.ico")
+    try:
+        data = png.read_bytes()
+        header = struct.pack("<HHH", 0, 1, 1)
+        entry = struct.pack("<BBBBHHII", 64, 64, 0, 0, 1, 32, len(data), 22)
+        ico.write_bytes(header + entry + data)
+        return ico
+    except Exception:
+        return None
 
 
 def dispatch_menu_command(
@@ -142,6 +202,11 @@ class BridgeTray:
         self._nid: NOTIFYICONDATAW | None = None
         self._owned_icons: list[int] = []
         self._user32 = None
+        self._classic_mode = _brand_icon_classic()
+        self._brand_mtime = _config_mtime()
+        # 当前跟随的托盘徽章 PNG（None=用默认图标）及其 mtime。
+        self._badge_png: Path | None = None
+        self._badge_mtime: float | None = None
 
     @property
     def startup_error(self) -> str:
@@ -280,6 +345,13 @@ class BridgeTray:
         user32.RegisterWindowMessageW.restype = wintypes.UINT
         user32.PostQuitMessage.argtypes = (ctypes.c_int,)
         user32.PostQuitMessage.restype = None
+        user32.SetTimer.argtypes = (
+            wintypes.HWND,
+            ctypes.c_size_t,
+            wintypes.UINT,
+            wintypes.LPVOID,
+        )
+        user32.SetTimer.restype = wintypes.BOOL
         user32.DestroyIcon.argtypes = (wintypes.HICON,)
         user32.DestroyIcon.restype = wintypes.BOOL
         user32.LoadImageW.argtypes = (
@@ -334,6 +406,9 @@ class BridgeTray:
             if message == WM_COMMAND:
                 self._dispatch_command(int(wparam) & 0xFFFF, hwnd, user32)
                 return 0
+            if message == WM_TIMER:
+                self._poll_brand_icon(user32, shell32)
+                return 0
             if message == WM_CLOSE:
                 user32.DestroyWindow(hwnd)
                 return 0
@@ -373,6 +448,7 @@ class BridgeTray:
             self._hwnd = int(hwnd)
             if self._show_icon:
                 self._add_icon(user32, shell32, hwnd)
+                user32.SetTimer(hwnd, 1, BRAND_ICON_POLL_MILLISECONDS, None)
             self._ready.set()
             self._report(
                 "notification area icon ready"
@@ -403,7 +479,17 @@ class BridgeTray:
             user32.UnregisterClassW(class_name, instance)
 
     def _load_icon(self, user32, shell32) -> int:
-        tray_png = resources.find_tray_icon()
+        if self._badge_png is not None and self._badge_png.is_file():
+            ico = _png_as_icon_file(self._badge_png)
+            if ico is not None:
+                width, height = _system_small_icon_size(user32)
+                handle = user32.LoadImageW(
+                    None, str(ico), IMAGE_ICON, width, height, LR_LOADFROMFILE
+                )
+                if handle:
+                    self._owned_icons.append(int(handle))
+                    return int(handle)
+        tray_png = resources.find_tray_icon(classic=self._classic_mode)
         if tray_png is not None:
             tray_ico = tray_png.with_suffix(".ico")
             if tray_ico.is_file():
@@ -456,6 +542,94 @@ class BridgeTray:
         if self._nid is not None:
             shell32.Shell_NotifyIconW(NIM_DELETE, ctypes.byref(self._nid))
             self._nid = None
+
+    def _voice_tray_badge_png(self) -> Path | None:
+        """Returns the badge PNG to show, or None for the default icon.
+
+        开关打开且桥接侧记录了当前语音键槽位时，取主进程画好的各代徽章
+        PNG 里 mtime 最新的一份；关着或还没切换过模式就用默认图标。
+        """
+
+        try:
+            enabled = bool(
+                config.load_config(config.config_path()).get(
+                    "voice_tray_badge_enabled", False
+                )
+            )
+        except Exception:
+            return None
+        if not enabled:
+            return None
+        slot = -1
+        try:
+            status = bridge_runtime_status.read_status(config.config_root())
+        except Exception:
+            status = None
+        if status is not None:
+            try:
+                slot = int(status.voice_active_slot)
+            except (TypeError, ValueError):
+                slot = -1
+        if slot < 1:
+            return None
+        root = config.config_root()
+        newest: Path | None = None
+        newest_mtime: float | None = None
+        for candidate in sorted(root.glob(VOICE_BADGE_PNG_GLOB)):
+            try:
+                mtime = candidate.stat().st_mtime
+            except OSError:
+                continue
+            if newest is None or mtime > newest_mtime:
+                newest = candidate
+                newest_mtime = mtime
+        return newest
+
+    def _poll_voice_badge(self, user32, shell32) -> None:
+        # 主进程在模式切换/改配置后重画徽章 PNG；这里按目标文件与
+        # mtime 的变化发现新图，半秒多内原地换掉托盘图标。
+        target = self._voice_tray_badge_png()
+        mtime: float | None = None
+        if target is not None:
+            try:
+                mtime = target.stat().st_mtime
+            except OSError:
+                target = None
+                mtime = None
+        if target == self._badge_png and mtime == self._badge_mtime:
+            return
+        self._badge_png = target
+        self._badge_mtime = mtime
+        self._swap_icon(user32, shell32)
+
+    def _swap_icon(self, user32, shell32) -> None:
+        if self._nid is None:
+            return
+        handle = self._load_icon(user32, shell32)
+        if not handle:
+            return
+        previous = self._nid.hIcon
+        self._nid.hIcon = handle
+        if shell32.Shell_NotifyIconW(NIM_MODIFY, ctypes.byref(self._nid)):
+            if previous in self._owned_icons:
+                self._owned_icons.remove(previous)
+                user32.DestroyIcon(previous)
+        else:
+            self._nid.hIcon = previous
+
+    def _poll_brand_icon(self, user32, shell32) -> None:
+        # 徽章跟随不看 config mtime（模式切换只改 runtime status），
+        # 每个 tick 都查一次；brand_icon_mode 仍按 mtime 变化发现。
+        self._poll_voice_badge(user32, shell32)
+        mtime = _config_mtime()
+        if mtime == self._brand_mtime:
+            return
+        self._brand_mtime = mtime
+        classic = _brand_icon_classic()
+        if classic == self._classic_mode or self._nid is None:
+            return
+        self._classic_mode = classic
+        self._swap_icon(user32, shell32)
 
     def _show_menu(self, user32, hwnd) -> None:
         menu = user32.CreatePopupMenu()

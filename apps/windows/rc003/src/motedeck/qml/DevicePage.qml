@@ -51,6 +51,47 @@ Item {
         return null
     }
 
+    // 红/黄都是需要用户接手才能恢复的状态：此时横幅右上角给出「求助 AI」
+    // 入口。绿（已连接）、灰（未检查/等待就绪）和未选设备都不算卡住；
+    // 「未连接」只是遥控器关机/断开了，等它回来接上即可，同样不算卡住。
+    readonly property bool deviceStateStuck: {
+        const code = currentDeviceStateCode()
+        return code !== "paired" && code !== "unchecked"
+            && code !== "pending" && code !== "unselected"
+            && code !== "disconnected"
+    }
+
+    // 万能求助提示词：项目仓库、当前状态快照、日志分流口诀、提权专项和
+    // 分层排查清单，一次性交给 AI，让它能按步骤接手排查。
+    function aiHelpPromptText() {
+        return [
+            qsTr("你好，请帮我排查 MoteDeck（小米或谷歌蓝牙遥控器的 Windows 客户端）无法正常接收遥控器按键的问题。"),
+            qsTr("项目仓库在 GitHub：https://github.com/HZDavy/MoteDeck（PySide6/QML 桌面应用，rc003 客户端核心逻辑在 apps/windows/rc003/src/motedeck 目录，含后台服务 bridge 和按键注入模块）。本机是安装版、没有源码；如果日志指向代码问题，请给出结论和日志证据（时间+关键行），我来转给开发者，不要让我改代码。"),
+            qsTr("应用版本：" + SettingsController.applicationVersion + "；当前设备：" + SettingsController.activeRemoteLabel + "（型号由软件按蓝牙广播名/GATT 型号串实际读取，分不清时由我手选，可能与实物不符）。"),
+            qsTr("当前状态快照：界面显示=" + currentDeviceStateText()
+                + "；服务进程运行=" + SettingsController.bridgeRunning
+                + "；服务已连接遥控器=" + SettingsController.bridgeConnected
+                + "；按键注入通道=" + SettingsController.hidTapState
+                + "；标准输入通道=" + SettingsController.rawInputState + "。"),
+            qsTr("日志文件在 %LOCALAPPDATA%\\MoteDeck\\logs\\（app.log、hid-helper.log），请先读日志再下结论。"),
+            qsTr("排查规则：按键要过几道关才能到达目标应用。每一步先告诉我要做什么，一步一步来，不要一次性丢一堆命令。"),
+            qsTr("第 0 步（永远先做）：在两个日志文件里搜 PhysicalKeyInUseError、injection_attempt_id、hid_copy_health、connect_gatt、waiting_neutral、cleanup_pending、ERROR、Traceback，以及“服务无法在此时接受控制信息”，告诉我命中哪些，再按下面分类排查。"),
+            qsTr("【专项】仅当界面显示「待启动服务」/「未完成管理员授权」，或启动服务、以管理员身份运行报“服务无法在此时接受控制信息”时才进入（否则跳过）。这是提权通道问题，按顺序走："),
+            qsTr("1. 查注册表：reg query \"HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\"，看 EnableLUA、ConsentPromptBehaviorAdmin、FilterAdministratorToken 三个值（EnableLUA=0x1、ConsentPromptBehaviorAdmin=0x5 是正常；FilterAdministratorToken=1 是已知元凶之一）。"),
+            qsTr("2. 让我重启电脑试一次（Appinfo 审批服务卡死，重启即活）。"),
+            qsTr("3. 重启后无效、管理员命令行还报“服务无法在此时接受控制信息”→ 走恢复环境：开始菜单按住 Shift 点重启 → 疑难解答 → 高级选项 → 命令提示符（恢复环境权限全开）。先 dir C:\\Windows / dir D:\\Windows 确认系统盘符（恢复环境里盘符可能变），再 reg load HKLM\\TEMP <系统盘>\\Windows\\System32\\config\\SOFTWARE 离线加载，把 FilterAdministratorToken 改回 0；顺带 reg load HKLM\\SYSTMP <系统盘>\\Windows\\System32\\config\\SYSTEM 查 Services\\Appinfo 的 Start（0x4 是被禁用，改回 3），改完 reg unload HKLM\\TEMP 和 reg unload HKLM\\SYSTMP 卸载，退出重启。"),
+            qsTr("4. 回到系统后跑 sfc /scannow 修系统文件（蓝牙栈异常也可能被它顺带修好）。"),
+            qsTr("5. 检查杀毒软件是否拦截了 helper 程序启动（查杀软隔离/拦截记录，把安装目录加白名单）。"),
+            qsTr("【主分类】服务正常运行但按键没反应时，按此排查："),
+            qsTr("一、遥控器和蓝牙链路（收不到事件）：遥控器没电/深度休眠→换电池或按键唤醒再试；配对记录损坏或被删→删除配对重连；蓝牙适配器省电/驱动异常→设备管理器关闭“允许计算机关闭此设备以节约电源”；Bluetooth Support Service 未运行→启动并设为自动；日志反复出现 connect_gatt ConnectionError→跑 sfc /scannow；距离远/2.4G 干扰→靠近主机、远离 USB3.0 设备再试。"),
+            qsTr("二、MoteDeck 应用层（收到了但没处理）：日志里 hid_copy_health 心跳的 injection_attempt_id 长时间不变 + 反复 PhysicalKeyInUseError = 拦截会话挂死（已知软件 bug，表现为时好时坏、过阵子自己恢复）→ 重启 MoteDeck 绕过，不要折腾系统设置；日志出现 cleanup_pending 长期不释放 = 语音键状态锁死（已上报）→ 重启 MoteDeck 绕过；部分按键行为不对（某些键没反应/功能错乱）且设备名可能与实物不符 = 型号判错导致映射不对 → 用设备页的型号确认功能改对型号；界面“未选择设备”或选择报错 → 设备页重新“选择设备”。"),
+            qsTr("三、注入到达目标应用（注入了但应用没收到）：目标应用以管理员身份运行会吞掉低权限注入 → 改为普通权限；目标应用在后台没焦点 → 点一下目标应用窗口再按；快捷键被截图工具/输入法/其他全局热键抢占 → 换一个快捷键试试；游戏独占全屏 → 改为无边框窗口。"),
+            qsTr("四、语音链路特有（按键活了但没有声音）：声音设置里找不到 CABLE Output → 重装虚拟声卡驱动；目标应用的麦克风要选 CABLE Output 不是物理麦克风；设置→隐私→麦克风，允许桌面应用访问。"),
+            qsTr("五、系统环境（特殊情况）：锁屏/UAC 安全桌面弹出时注入被拦截属正常现象，回桌面再试；远程桌面/快速用户切换下注入可能无效 → 在物理会话里试。"),
+            qsTr("输出要求：最后给结论——命中哪几条（可多选，软件 bug 靠重启绕过、系统问题优先修）、每条的日志证据（时间+关键行）、我接下来要执行的操作、需要开发者修复的具体问题。")
+        ].join("\n")
+    }
+
     function currentDeviceStateCode() {
         if (!SettingsController.activeRemoteKey)
             return "unselected"
@@ -59,12 +100,25 @@ Item {
         if (!SettingsController.bridgeRunning && !SettingsController.bridgeLaunchBusy)
             return "service_stopped"
         if (!SettingsController.isRc003Device) {
+            // 谷歌遥控器：管理员授权没完成（UAC 被取消或失败）时按键收不
+            // 进来，跟小米一样退回「待启动服务」，不能显示成「已连接」。
+            if (SettingsController.bridgeRunning
+                    && SettingsController.rawInputState
+                        === "chromecast_permission_cancelled")
+                return "service_stopped"
             if (SettingsController.bridgeConnected)
                 return "paired"
+            // 服务在跑却没连上：以实连为准，别拿扫描快照里的配对记录
+            // 冒充「已连接」，否则连接中/重连时会来回闪。
+            if (SettingsController.bridgeRunning)
+                return "disconnected"
             return SettingsController.activeRemotePairingState
         }
         // 服务已经连上遥控器时以实连为准：启动时那次探测失败，不能把已连上
-        // 的链路显示成「点击“重新检查”」。
+        // 的链路显示成「点击“重新检查”」。但管理员授权停在未完成/已取消时
+        // 按键收不进来，不能显示成「已连接」，退回「待启动服务」。
+        if (sourceAuthorizationRetryAvailable())
+            return "service_stopped"
         if (SettingsController.bridgeConnected)
             return "paired"
         if (DiagnosticsController.isRefreshing)
@@ -79,8 +133,13 @@ Item {
             return "conflict"
         if (resultCode === "no_candidate")
             return "unpaired"
-        if (row.status === "pass")
-            return "paired"
+        if (row.status === "pass") {
+            // 探测结果只是上一次扫描留下的快照，遥控器关机/拔电池后不会
+            // 自动失效。服务在跑、而实连（bridgeConnected）没建立，就说明
+            // 此刻确实没连上——直接按断开显示，不要拿旧快照冒充「已连接」，
+            // 否则启动时会在「连接中 / 等待重连」之间不停闪烁。
+            return "disconnected"
+        }
         if (row.status === "manual")
             return "waiting"
         return "error"
@@ -93,6 +152,7 @@ Item {
         case "selected_missing": return qsTr("所选设备未连接")
         case "checking": return qsTr("正在检查")
         case "paired": return qsTr("已连接")
+        case "disconnected": return qsTr("未连接")
         case "waiting": return qsTr("正在确认")
         case "service_stopped": return qsTr("待启动服务")
         case "receiver_failed": return qsTr("接收失败")
@@ -448,6 +508,185 @@ Item {
         }
     }
 
+    // 「卡住了？求助AI」的二级弹窗：展示万能排查提示词，一键复制后
+    // 用户直接粘给任意 AI 助手，让 AI 按提示词里的清单接手排查。
+    SettingsDialog {
+        id: aiHelpDialog
+        objectName: "aiHelpDialog"
+        tokens: root.tokens
+        preferredWidth: 680
+        title: qsTr("把这段话发给 AI")
+        titleNote: qsTr("点“复制提示词”，粘贴给任意 AI 助手让它接手排查")
+
+        property bool aiHelpCopied: false
+
+        Timer {
+            id: aiHelpCopiedTimer
+            interval: 2000
+            onTriggered: aiHelpDialog.aiHelpCopied = false
+        }
+        onClosed: aiHelpCopied = false
+
+        contentItem: ColumnLayout {
+            spacing: root.tokens.spacingMedium
+
+            ScrollView {
+                id: aiHelpPromptScroll
+                objectName: "aiHelpPromptScroll"
+                Layout.fillWidth: true
+                Layout.preferredHeight: 300
+                ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+
+                TextArea {
+                    objectName: "aiHelpPromptTextArea"
+                    readOnly: true
+                    text: root.aiHelpPromptText()
+                    wrapMode: TextEdit.WordWrap
+                    selectByMouse: true
+                    color: root.tokens.textPrimary
+                    font.family: root.tokens.fontFamily
+                    font.pixelSize: root.tokens.fontSizeBody
+                    leftPadding: 12
+                    rightPadding: 12
+                    topPadding: 10
+                    bottomPadding: 10
+                    background: Rectangle {
+                        radius: root.tokens.cornerRadiusSmall
+                        color: root.tokens.surfaceMuted
+                        border.width: root.tokens.hairlineWidth
+                        border.color: root.tokens.border
+                    }
+                }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: root.tokens.spacingMedium
+
+                CompactButton {
+                    id: copyAiHelpPromptButton
+                    objectName: "copyAiHelpPromptButton"
+                    tokens: root.tokens
+                    text: aiHelpDialog.aiHelpCopied
+                        ? qsTr("已复制") : qsTr("复制提示词")
+                    Accessible.name: text
+                    onClicked: {
+                        SettingsController.copyTextToClipboard(
+                            root.aiHelpPromptText())
+                        aiHelpDialog.aiHelpCopied = true
+                        aiHelpCopiedTimer.restart()
+                    }
+                }
+
+                UiLabel {
+                    tokens: root.tokens
+                    kind: noteKind
+                    Layout.fillWidth: true
+                    text: qsTr("发给 AI 后，它会按提示词里的清单逐步帮你排查")
+                }
+            }
+        }
+    }
+
+    // 小米两款遥控器分不清时的型号确认：蓝牙名相同、型号串没读到，
+    // 让用户对着实物拍板；点设备卡右上角的问号也能随时打开这里改。
+    SettingsDialog {
+        id: remoteModelDialog
+        objectName: "remoteModelDialog"
+        tokens: root.tokens
+        preferredWidth: 440
+        title: qsTr("确认遥控器型号")
+        titleNote: qsTr("对照实物遥控器选一个")
+        standardButtons: Dialog.Ok | Dialog.Cancel
+
+        property int pendingIndex: 0
+
+        readonly property string savedProfile: {
+            const key = SettingsController.remoteModelConfirmKey
+            for (const row of SettingsController.remoteDeviceChoices) {
+                if (row.key === key)
+                    return row.profile
+            }
+            return ""
+        }
+
+        onAboutToShow: {
+            pendingIndex = SettingsController.remoteModelOptions.findIndex(
+                option => option.profile === savedProfile)
+            if (pendingIndex < 0)
+                pendingIndex = 0
+        }
+        onAccepted: {
+            const options = SettingsController.remoteModelOptions
+            if (pendingIndex >= 0 && pendingIndex < options.length)
+                SettingsController.confirmRemoteModel(
+                    SettingsController.remoteModelConfirmKey,
+                    options[pendingIndex].profile)
+        }
+
+        contentItem: ColumnLayout {
+            spacing: root.tokens.spacingMedium
+
+            UiLabel {
+                tokens: root.tokens
+                kind: bodyKind
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                text: qsTr("这台遥控器广播的蓝牙名和型号串都没能确认具体型号，请对照实物遥控器选一个。选错了可以随时点设备卡右上角的问号改回来。")
+            }
+
+            Repeater {
+                model: SettingsController.remoteModelOptions
+
+                delegate: AbstractButton {
+                    id: modelOption
+                    required property int index
+                    required property var modelData
+                    readonly property bool on: index === remoteModelDialog.pendingIndex
+                    Layout.fillWidth: true
+                    implicitHeight: 40
+                    Accessible.role: Accessible.RadioButton
+                    Accessible.name: modelData.label
+                    Accessible.checked: on
+                    onClicked: remoteModelDialog.pendingIndex = index
+
+                    background: Rectangle {
+                        radius: root.tokens.cornerRadiusSmall
+                        color: modelOption.on ? root.tokens.surfaceMuted : "transparent"
+                        border.width: modelOption.on ? 1 : root.tokens.hairlineWidth
+                        border.color: modelOption.on ? root.tokens.accent : root.tokens.border
+                    }
+                    contentItem: RowLayout {
+                        spacing: root.tokens.spacingSmall
+
+                        Rectangle {
+                            width: 14
+                            height: 14
+                            radius: 7
+                            color: "transparent"
+                            border.width: modelOption.on ? 5 : 1.5
+                            border.color: modelOption.on
+                                ? root.tokens.accent : root.tokens.border
+                        }
+                        UiLabel {
+                            tokens: root.tokens
+                            kind: bodyKind
+                            Layout.fillWidth: true
+                            text: modelOption.modelData.label
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Connections {
+        target: SettingsController
+        function onRemoteModelConfirmRequested() {
+            remoteModelDialog.open()
+        }
+    }
+
     QuickSetupDialog {
         id: quickSetupDialog
         tokens: root.tokens
@@ -743,8 +982,54 @@ Item {
                         text: qsTr("选择设备")
                         onClicked: remoteDeviceDialog.open()
                         KeyNavigation.backtab: openBluetoothSettingsButton
-                        KeyNavigation.tab: buttonReceiverPrimaryButton
+                        KeyNavigation.tab: changeRemoteModelButton.visible
+                            ? changeRemoteModelButton
+                            : (root.deviceStateStuck
+                                ? askAiHelpButton : buttonReceiverPrimaryButton)
                     }
+                }
+
+                // 右上角问号：随时手动改当前设备的型号。小米两款遥控器的
+                // 蓝牙广播名相同、型号串也可能读不到，分不清时让用户自己拍板。
+                IconButton {
+                    id: changeRemoteModelButton
+                    objectName: "changeRemoteModelButton"
+                    tokens: root.tokens
+                    inverse: true
+                    iconName: "help"
+                    visible: SettingsController.activeRemoteModelSelectable
+                    anchors.top: parent.top
+                    anchors.topMargin: 10
+                    anchors.right: parent.right
+                    anchors.rightMargin: 12
+                    Accessible.name: qsTr("确认遥控器型号")
+                    Accessible.role: Accessible.Button
+                    onClicked: remoteModelDialog.open()
+                    KeyNavigation.backtab: selectRemoteButton
+                    KeyNavigation.tab: root.deviceStateStuck
+                        ? askAiHelpButton : buttonReceiverPrimaryButton
+                }
+
+                // 卡住时（红/黄状态）在横幅右上角给一个「求助 AI」入口：
+                // 二级弹窗里是一段可直接复制给 AI 的万能排查提示词。
+                CompactButton {
+                    id: askAiHelpButton
+                    objectName: "askAiHelpButton"
+                    tokens: root.tokens
+                    inverse: true
+                    flat: true
+                    text: qsTr("卡住了？求助AI")
+                    Accessible.name: text
+                    visible: root.deviceStateStuck
+                    anchors.top: parent.top
+                    anchors.topMargin: 10
+                    anchors.right: changeRemoteModelButton.visible
+                        ? changeRemoteModelButton.left : parent.right
+                    anchors.rightMargin: changeRemoteModelButton.visible ? 4 : 20
+                    onClicked: aiHelpDialog.open()
+                    KeyNavigation.backtab: changeRemoteModelButton.visible
+                        ? changeRemoteModelButton : selectRemoteButton
+                    KeyNavigation.tab: buttonReceiverPrimaryButton
                 }
 
                 // 1px 描边：放在最上层，避免被斜向底色 Shape 盖住；

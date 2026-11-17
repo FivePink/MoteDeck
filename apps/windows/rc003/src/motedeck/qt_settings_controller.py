@@ -53,8 +53,10 @@ from typing import Any, Callable, Dict, List, Optional
 from .qt_settings_qml_tokens import (
     Property,
     QApplication,
+    QCursor,
     QEvent,
     QObject,
+    QPointF,
     QStandardPaths,
     QTimer,
     QUrl,
@@ -96,6 +98,68 @@ from .qt_settings_app import (
     _vb_cable_test_active_event,
     _with_openmexia_options,
 )
+from PySide6.QtGui import QColor, QFont, QImage, QPainter, QPen
+
+
+# 托盘徽章图标字体：Win11 用 Fluent Icons，Win10 回退 MDL2 Assets。
+_VOICE_BADGE_FONT_FAMILIES = ("Segoe Fluent Icons", "Segoe MDL2 Assets")
+
+
+def _render_voice_badge_icon(
+    destination: Path,
+    *,
+    glyph: str,
+    text: str,
+    color: str,
+    dark_mode: bool,
+    bg: str = "",
+) -> bool:
+    """Draws the tray badge: rounded tile + the key's single char/glyph.
+
+    底色按系统深浅模式（深色=黑底浅框、浅色=白底深框），徽章颜色
+    只决定文字颜色，与模式切换气泡的着色规则保持一致。bg 非空时
+    强制底色深浅（dark/light）：切换黑底时默认黑字自动变白字，
+    用户选的彩字不变。
+    """
+
+    if not text:
+        return False
+    if bg == "dark":
+        dark_mode = True
+    elif bg == "light":
+        dark_mode = False
+    image = QImage(64, 64, QImage.Format.Format_ARGB32)
+    image.fill(0)
+    painter = QPainter(image)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
+    background = QColor(24, 24, 27) if dark_mode else QColor(255, 255, 255)
+    border = QColor(122, 122, 128) if dark_mode else QColor(214, 214, 219)
+    painter.setBrush(background)
+    painter.setPen(QPen(border, 3))
+    painter.drawRoundedRect(2, 2, 60, 60, 16, 16)
+    text_color = (
+        QColor(color)
+        if color
+        else (QColor(255, 255, 255) if dark_mode else QColor(18, 18, 20))
+    )
+    # 托盘按 16px 显示，字要画满方框才看得清：字形图标和单字都尽量占满。
+    if glyph:
+        font = QFont()
+        font.setFamilies(list(_VOICE_BADGE_FONT_FAMILIES))
+        font.setPixelSize(54)
+    else:
+        font = QFont("Microsoft YaHei UI")
+        font.setPixelSize(50)
+        font.setBold(True)
+    painter.setFont(font)
+    painter.setPen(QPen(text_color))
+    painter.drawText(image.rect(), Qt.AlignmentFlag.AlignCenter, text)
+    painter.end()
+    try:
+        return image.save(str(destination), "PNG")
+    except Exception:
+        return False
 
 
 class SettingsController(QObject):
@@ -113,6 +177,7 @@ class SettingsController(QObject):
     holdVoiceHotkeyTextChanged = Signal()
     voiceSlotHotkeysChanged = Signal()
     voiceKeyConfigsChanged = Signal()
+    voiceTrayBadgeEnabledChanged = Signal()
     quickSetupChanged = Signal()
     voicePluginStateChanged = Signal()
     openMexiaStateChanged = Signal()
@@ -141,6 +206,8 @@ class SettingsController(QObject):
     bridgeReconnectBusyChanged = Signal()
     desktopBehaviorChanged = Signal()
     trayStateChanged = Signal()
+    _bridgeVoiceSlotPushed = Signal(int)
+    brandIconModeChanged = Signal()
     maintenanceExitRequested = Signal()
     windowRestoreRequested = Signal()
     applicationExitReady = Signal()
@@ -160,6 +227,7 @@ class SettingsController(QObject):
     selectedDeviceIndexChanged = Signal()
     selectedDeviceChanged = Signal()
     remoteSelectionChanged = Signal()
+    remoteModelConfirmRequested = Signal()
     _remoteDevicesReady = Signal(object)
     _remoteSwitchReady = Signal(object)
     voiceHotkeyBusyChanged = Signal()
@@ -259,6 +327,18 @@ class SettingsController(QObject):
         self._config, self._bindings, self._configuration_issues = (
             config.load_window_settings(self._config_root)
         )
+        self._brand_icon_mode = int(self._config.get("brand_icon_mode", 0))
+        self._voice_tray_badge_enabled = bool(
+            self._config.get("voice_tray_badge_enabled", False)
+        )
+        self._voice_tray_active_slot = -1
+        self._voice_tray_badge_revision = 0
+        self._bridgeVoiceSlotPushed.connect(self._on_bridge_voice_slot_pushed)
+        # 进程内桥接的槽位直推：语音键切换的瞬间就刷新托盘徽章，不再等
+        # bridgeStatusRefreshTimer 轮询。
+        bridge_runtime_status.add_voice_active_slot_listener(
+            self._emit_bridge_voice_slot_pushed
+        )
         self._configuration_error = ""
         if self._configuration_issues:
             details = "；".join(
@@ -288,6 +368,7 @@ class SettingsController(QObject):
         self._remote_selection_message = ""
         self._remote_switch_pending = None
         self._remote_save_uncertain = False
+        self._remote_model_confirm_key = ""
         self._remoteDevicesReady.connect(self._on_remote_devices_ready)
         self._remoteSwitchReady.connect(self._on_remote_switch_ready)
         self.remoteSelectionChanged.connect(self.trayStateChanged.emit)
@@ -1056,6 +1137,27 @@ class SettingsController(QObject):
         return remote_selection.active_profile(self._config)
 
     @Property(bool, notify=remoteSelectionChanged)
+    def activeRemoteModelSelectable(self) -> bool:
+        # 只有本次扫描也分不清（通用蓝牙名 + 型号串没读到）才给问号入口；
+        # 型号已确证的设备不显示。
+        from . import remote_selection
+        if self.activeRemoteProfile not in remote_selection.XIAOMI_PROFILES:
+            return False
+        row = next((item for item in self._remote_devices
+                    if item["key"] == self.activeRemoteKey), None)
+        return row is not None and not row.get("model_confirmed", True)
+
+    @Property(str, notify=remoteSelectionChanged)
+    def remoteModelConfirmKey(self) -> str:
+        return self._remote_model_confirm_key
+
+    @Property("QVariantList", notify=remoteSelectionChanged)
+    def remoteModelOptions(self) -> list:
+        return [{"profile": profile_id,
+                 "label": device_catalog.profile_for(profile_id).display_name}
+                for profile_id in ("xiaomi-rc001", "xiaomi-rc003")]
+
+    @Property(bool, notify=remoteSelectionChanged)
     def activeRemoteReady(self) -> bool:
         from . import remote_selection
         return remote_selection.runtime_ready(self.activeRemoteProfile)
@@ -1207,7 +1309,11 @@ class SettingsController(QObject):
             # save unrelated page drafts or overwrite another saved field.
             path = config.config_path(self._config_root)
             updated = config.load_config(path)
-            changed = remote_selection.active_key(updated) != selection["active"]
+            # 型号也算变化：问号按钮给当前设备改型号时（设备没换），同样要
+            # 走完整切换流程，按新型号重载按键映射和热区。
+            changed = (remote_selection.active_key(updated) != selection["active"]
+                       or remote_selection.active_profile(updated)
+                       != remote_selection.active_profile(selection))
             if changed:
                 saved, saved_bindings = config.switch_remote_settings(
                     path, config.key_bindings_path(self._config_root), selection,
@@ -1278,16 +1384,48 @@ class SettingsController(QObject):
         if self._remote_scan_busy or not self._remote_scan_valid:
             self._remote_feedback("请等待设备读取完成；读取失败时请刷新后重试。")
             return
+        row = next((item for item in self._remote_devices
+                    if item["key"] == key), None)
+        if (row is not None and row["profile"] in remote_selection.XIAOMI_PROFILES
+                and not row.get("model_confirmed", True)):
+            # 蓝牙名和型号串都分不清：弹窗让用户自己指定是哪一款。
+            self._remote_model_confirm_key = key
+            self.remoteModelConfirmRequested.emit()
+            return
+        self._use_remote_device_confirmed(key, "")
+
+    def _use_remote_device_confirmed(self, key: str, override_profile: str) -> None:
+        from . import remote_selection
+        if self._remote_selection_busy:
+            return
+        if self._remote_scan_busy or not self._remote_scan_valid:
+            self._remote_feedback("请等待设备读取完成；读取失败时请刷新后重试。")
+            return
         try:
             updated, legacy_binding = remote_selection.select_paired_device(
-                self._remote_selection(), key, self._remote_devices)
+                self._remote_selection(), key, self._remote_devices,
+                override_profile=override_profile)
         except remote_selection.SelectionError as exc:
             self._remote_feedback(str(exc))
             return
-        if key == self.activeRemoteKey and not self._remote_save_uncertain:
+        if (key == self.activeRemoteKey and not self._remote_save_uncertain
+                and not override_profile):
             self._remote_feedback("当前已在使用这台设备。")
             return
         self._change_active_remote(updated, allow_legacy_binding=legacy_binding)
+
+    @Slot(str, str)
+    def confirmRemoteModel(self, key: str, profile: str) -> None:
+        from . import remote_selection
+        self._remote_model_confirm_key = ""
+        if profile not in remote_selection.XIAOMI_PROFILES:
+            return
+        if (key == self.activeRemoteKey
+                and remote_selection.profile_for_key(
+                    self._remote_selection(), key) == profile):
+            # 型号没变：只关弹窗，什么都不改。
+            return
+        self._use_remote_device_confirmed(key, profile)
 
     def _change_active_remote(self, updated: dict, *, allow_legacy_binding=True) -> None:
         if self.configurationReadOnly:
@@ -1375,6 +1513,9 @@ class SettingsController(QObject):
             return
         self._bridge_connected = value
         self.bridgeConnectedChanged.emit()
+        # 连接翻转后重画托盘徽章：启动时槽位先于连接到位，首轮刷新会被
+        # "未连接"拦掉并把徽章文件删掉，槽位不变就永远轮不到重画。
+        self._refresh_voice_tray_badge()
         self.trayStateChanged.emit()
 
     def _set_bridge_connection_state(self, value: str) -> None:
@@ -1406,7 +1547,10 @@ class SettingsController(QObject):
             self._hid_tap_state = hid_tap_state
             self._voice_key_physicalizer_state = voice_key_physicalizer_state
             self.bridgeInputStateChanged.emit()
-            self.trayStateChanged.emit()
+            # 徽章资格依赖这三个输入通道状态：启动竞态下连接翻转先于
+            # HID 进入就绪（如 injecting→attached），翻转时刷新会被拦掉，
+            # 之后通道就绪必须补一次重画，否则托盘永远停在报错图标。
+            self._refresh_voice_tray_badge()
 
         battery_level = (
             getattr(status, "battery_level", None)
@@ -1701,18 +1845,109 @@ class SettingsController(QObject):
         )
 
     def _tray_icon_state(self) -> str:
+        # off=未就绪（服务没启动、没连接遥控器或按键接收异常），统一显示
+        # 报错图标；connected=一切正常，托盘才有资格显示语音键徽章。
         if not self._bridge_running:
             return "off"
         if self._bridge_connected and self._button_receiver_usable():
             return "connected"
-        return "waiting"
+        return "off"
+
+    def _voice_tray_badge_path(self) -> Path:
+        # QML 托盘按 URL 加载并按 URL 缓存图标：固定两份文件轮换时，URL
+        # 弹回旧名会命中缓存里的旧图，快速切换看起来永远只在最早两张之间
+        # 跳，新画的徽章根本显示不出来。改成每代渲染用独立文件名，URL
+        # 每次都是新的，托盘必然重新读盘；旧代文件在渲染后清理。
+        return (
+            self._config_root
+            / f"voice-tray-badge-{self._voice_tray_badge_revision}.png"
+        )
+
+    def _emit_bridge_voice_slot_pushed(self, slot: int) -> None:
+        """桥接工作线程回调：转成 Qt 信号排队回 GUI 线程处理。"""
+
+        try:
+            self._bridgeVoiceSlotPushed.emit(int(slot))
+        except RuntimeError:
+            # 进程退出阶段底层对象可能已销毁；托盘刷新随之失效即可。
+            pass
+
+    def _on_bridge_voice_slot_pushed(self, slot: int) -> None:
+        """语音键槽位直推：立即重画托盘徽章，不等状态轮询。"""
+
+        slot = int(slot)
+        if slot == self._voice_tray_active_slot:
+            return
+        self._voice_tray_active_slot = slot
+        self._refresh_voice_tray_badge()
+
+    def _refresh_voice_tray_badge(self) -> None:
+        """Redraws the tray badge PNG for the currently active voice key."""
+
+        badge = (
+            config.voice_key_badge(self._config, self._voice_tray_active_slot)
+            if self._voice_tray_active_slot > 0
+            else {"display": "", "glyph": "", "color": "", "bg": ""}
+        )
+        usable = (
+            self._voice_tray_badge_enabled
+            and bool(badge["display"])
+            and self._tray_icon_state() == "connected"
+        )
+        if not usable:
+            for stale in self._config_root.glob("voice-tray-badge-*.png"):
+                try:
+                    stale.unlink()
+                except OSError:
+                    pass
+            self.trayStateChanged.emit()
+            return
+        dark = (
+            QApplication.styleHints().colorScheme() == Qt.ColorScheme.Dark
+        )
+        self._voice_tray_badge_revision += 1
+        destination = self._voice_tray_badge_path()
+        _render_voice_badge_icon(
+            destination,
+            glyph=badge["glyph"],
+            text=badge["display"],
+            color=badge["color"],
+            dark_mode=dark,
+            bg=badge.get("bg", ""),
+        )
+        # 只留新图和 QML 还在显示的上一代，其余（含历史遗留的 a/b 命名）
+        # 全部清掉；被占用删不掉的留给下一代再试。
+        previous = (
+            self._config_root
+            / f"voice-tray-badge-{self._voice_tray_badge_revision - 1}.png"
+        )
+        for stale in self._config_root.glob("voice-tray-badge-*.png"):
+            if stale in (destination, previous):
+                continue
+            try:
+                stale.unlink()
+            except OSError:
+                pass
+        self.trayStateChanged.emit()
 
     def _tray_icon_source(self) -> str:
-        path = resources.find_tray_icon(self._tray_icon_state())
+        if (
+            self._voice_tray_badge_enabled
+            and self._voice_tray_active_slot > 0
+            and self._tray_icon_state() == "connected"
+        ):
+            path = self._voice_tray_badge_path()
+            if path.is_file():
+                return QUrl.fromLocalFile(str(path)).toString()
+        path = resources.find_tray_icon(
+            self._tray_icon_state(), classic=self._brand_icon_mode == 1
+        )
         return QUrl.fromLocalFile(str(path)).toString() if path else ""
 
     def _brand_icon_source(self) -> str:
-        path = resources.find_app_icon("connected")
+        path = resources.find_app_icon(
+            "connected", classic=self._brand_icon_mode == 1
+        )
         return QUrl.fromLocalFile(str(path)).toString() if path else ""
 
     def _tray_tooltip(self) -> str:
@@ -1768,6 +2003,15 @@ class SettingsController(QObject):
         else:
             self._bridge_status_missing_since = None
         self._set_bridge_input_states(runtime_status)
+        bridge_slot = -1
+        if runtime_status is not None:
+            try:
+                bridge_slot = int(runtime_status.voice_active_slot)
+            except (TypeError, ValueError):
+                bridge_slot = -1
+        if bridge_slot != self._voice_tray_active_slot:
+            self._voice_tray_active_slot = bridge_slot
+            self._refresh_voice_tray_badge()
         self._set_bridge_connection_state(
             runtime_status.state.value
             if runtime_status is not None
@@ -3856,24 +4100,6 @@ class SettingsController(QObject):
         new_config["voice_cycle_short_press"] = enabled
         self._save_voice_config_data(new_config)
 
-    def _get_voice_other_key_switch(self) -> bool:
-        return config.voice_other_key_switch(self._config)
-
-    voiceOtherKeySwitch = Property(
-        bool,
-        _get_voice_other_key_switch,
-        notify=voiceCycleConfigChanged,
-    )
-
-    @Slot(bool)
-    def setVoiceOtherKeySwitch(self, enabled: bool) -> None:
-        enabled = bool(enabled)
-        if enabled == self._get_voice_other_key_switch():
-            return
-        new_config = dict(self._config)
-        new_config["voice_other_key_switch"] = enabled
-        self._save_voice_config_data(new_config)
-
     _VOICE_CYCLE_TOAST_ORDER = (
         config.VOICE_CYCLE_TOAST_DARK,
         config.VOICE_CYCLE_TOAST_LIGHT,
@@ -4089,6 +4315,7 @@ class SettingsController(QObject):
         rows: List[dict] = []
         for index, entry in enumerate(entries):
             slot = int(entry["id"])
+            badge = config.voice_key_badge(self._config, slot)
             source = entry["source"]
             device = entry["device"]
             plugin = str(entry.get("plugin", ""))
@@ -4130,6 +4357,12 @@ class SettingsController(QObject):
                     "gainAuto": config.voice_key_gain_auto(self._config, slot),
                     "tsfSwitch": config.voice_key_tsf_switch(self._config, slot),
                     "tsfProfile": config.voice_key_tsf_profile(self._config, slot),
+                    "badgeText": badge["text"],
+                    "badgeGlyph": badge["glyph"],
+                    "badgeColor": badge["color"],
+                    "badgeBg": badge.get("bg", ""),
+                    "badgeDisplay": badge["display"],
+                    "badgeAuto": badge["auto"],
                     "plugin": plugin,
                     "locked": config.is_locked_plugin_id(plugin),
                     "first": index == 0,
@@ -4228,6 +4461,24 @@ class SettingsController(QObject):
         self._save_voice_config_data(
             config.update_voice_key_config(self._config, slot, name=value)
         )
+
+    @Slot(int, str, str, str, str)
+    def setVoiceKeyConfigBadge(
+        self, slot: int, text: str, glyph: str, color: str, bg: str
+    ) -> None:
+        """保存某条语音键的徽章（单字/图标码点/颜色/底色，均可为空=自动）。"""
+
+        self._save_voice_config_data(
+            config.set_voice_key_config_badge(
+                self._config,
+                int(slot),
+                text=text,
+                glyph=glyph,
+                color=color,
+                bg=bg,
+            )
+        )
+        self._refresh_voice_tray_badge()
 
     @Slot(int, str)
     def setVoiceKeyConfigHotkey(self, slot: int, value: str) -> None:
@@ -5316,7 +5567,17 @@ class SettingsController(QObject):
     brandIconSource = Property(
         str,
         _brand_icon_source,
-        constant=True,
+        notify=brandIconModeChanged,
+    )
+    brandIconMode = Property(
+        int,
+        lambda self: self._brand_icon_mode,
+        notify=brandIconModeChanged,
+    )
+    voiceTrayBadgeEnabled = Property(
+        bool,
+        lambda self: self._voice_tray_badge_enabled,
+        notify=voiceTrayBadgeEnabledChanged,
     )
     trayTooltip = Property(
         str,
@@ -5625,6 +5886,13 @@ class SettingsController(QObject):
 
     isRc003Device = Property(bool, _get_is_rc003_device, notify=selectedDeviceChanged)
 
+    def _get_is_rc001_device(self) -> bool:
+        # 小米遥控器2（RC001）按键与 RC003 相同，但机身更短更宽，
+        # 照片上的键位另有一套。
+        return self._selected_device_id() == device_catalog.RC001_ID
+
+    isRc001Device = Property(bool, _get_is_rc001_device, notify=selectedDeviceChanged)
+
     def _get_selected_device_description(self) -> str:
         if device_catalog.CATALOG_ERROR is not None:
             return self._get_device_catalog_error_text()
@@ -5679,13 +5947,6 @@ class SettingsController(QObject):
     def _get_primary_action_options(self) -> List[str]:
         return list(_ORDINARY_PRIMARY_ACTION_OPTIONS)
 
-    def _mapping_options_available_now(self, options: List[str]) -> List[str]:
-        allow_mode_cycle = config.voice_other_key_switch(self._config)
-        return [
-            option for option in options
-            if allow_mode_cycle or option != _VOICE_MODE_CYCLE_LABEL
-        ]
-
     primaryActionOptions = Property(
         list, _get_primary_action_options, constant=True
     )
@@ -5722,15 +5983,27 @@ class SettingsController(QObject):
         options = list(_ORDINARY_PRIMARY_ACTION_OPTIONS)
         if not button_id:
             return options
+        # 语音键本身就是对讲键，再把它设成「语音模式切换」会和按住说话
+        # 的行为撞在一起，所以这颗键不再提供这一项。
+        if button_id == "mic":
+            options = [
+                option
+                for option in options
+                if option != _VOICE_MODE_CYCLE_LABEL
+            ]
         voice_options = self._voice_action_displays(button_id == "mic")
         return _with_openmexia_options(
-            self._mapping_options_available_now(
-                list(dict.fromkeys(voice_options + options))
-            )
+            list(dict.fromkeys(voice_options + options))
         )
 
     @Slot(str, result=str)
     def actionOptionGroupTitle(self, option: str) -> str:
+        # 语音键和「未设置」不在预设分组表里，单独补上分组名，
+        # 否则它们在按键页的动作分类里会掉进「其他动作」。
+        if settings_ui.voice_slot_for_display(option) is not None:
+            return "语音"
+        if option == settings_ui.SECONDARY_UNCONFIGURED_DISPLAY:
+            return "其他"
         return (
             settings_ui.ACTION_OPTION_GROUP_BY_LABEL.get(option, "")
             or settings_ui.openmexia_action_group_title(option)
@@ -5783,9 +6056,7 @@ class SettingsController(QObject):
     def secondaryActionOptionsFor(self, button_id: str) -> List[str]:
         if not button_id:
             return list(_SECONDARY_ACTION_OPTIONS)
-        return _with_openmexia_options(
-            self._mapping_options_available_now(_SECONDARY_ACTION_OPTIONS)
-        )
+        return _with_openmexia_options(list(_SECONDARY_ACTION_OPTIONS))
 
     @Slot(str, result=list)
     def longPressActionOptionsFor(self, button_id: str) -> List[str]:
@@ -5924,6 +6195,56 @@ class SettingsController(QObject):
             return
         self._close_behavior = value
         self.desktopBehaviorChanged.emit()
+
+    @Slot(int)
+    def setBrandIconMode(self, mode: int) -> None:
+        value = 1 if int(mode) == 1 else 0
+        if value == self._brand_icon_mode:
+            return
+        if self.configurationReadOnly:
+            return
+        next_config = dict(self._config)
+        next_config["brand_icon_mode"] = value
+        try:
+            saved = config.save_config_and_load(
+                config.config_path(self._config_root), next_config
+            )
+        except Exception:
+            # 保存失败时保持原样：图标没有切换本身就是可见的结果。
+            return
+        self._config = saved
+        self._brand_icon_mode = value
+        self._bump_settings_revision()
+        self.brandIconModeChanged.emit()
+        self.trayStateChanged.emit()
+
+    def _get_voice_tray_badge_enabled(self) -> bool:
+        return self._voice_tray_badge_enabled
+
+    @Slot(bool)
+    def setVoiceTrayBadgeEnabled(self, enabled: bool) -> None:
+        value = bool(enabled)
+        if value == self._voice_tray_badge_enabled:
+            return
+        if self.configurationReadOnly:
+            return
+        next_config = dict(self._config)
+        next_config["voice_tray_badge_enabled"] = value
+        try:
+            saved = config.save_config_and_load(
+                config.config_path(self._config_root), next_config
+            )
+        except Exception:
+            return
+        self._config = saved
+        self._voice_tray_badge_enabled = value
+        self._bump_settings_revision()
+        self.voiceTrayBadgeEnabledChanged.emit()
+        self._refresh_voice_tray_badge()
+
+    @Slot()
+    def refreshVoiceTrayBadge(self) -> None:
+        self._refresh_voice_tray_badge()
 
     @Slot()
     def startBridgeOnApplicationStart(self) -> None:
@@ -6871,6 +7192,13 @@ class SettingsController(QObject):
             return
         self._pending_bridge_launch = attempt
 
+    @Slot(result="QPointF")
+    def cursorPosition(self) -> QPointF:
+        """托盘自绘菜单的弹出锚点：全局光标坐标（设备无关像素）。"""
+
+        pos = QCursor.pos()
+        return QPointF(pos.x(), pos.y())
+
     @Slot()
     def startBridge(self) -> None:
         """Start the bridge without saving unrelated unsaved page edits."""
@@ -7389,6 +7717,85 @@ class SettingsController(QObject):
             detail = str(exc)
             message = detail if len(detail) <= 240 else detail[:240] + "…"
             return {"ok": False, "id": self._mapping_edit_target, "message": message}
+
+    @Slot("QVariantList", result="QVariantMap")
+    def flushMappingDraftEdits(self, groups: list) -> dict:
+        """Persist the edit panel's cross-application draft rows in one go.
+
+        面板的一次编辑会话里，用户可能先后在几个应用下改过好几颗按键；
+        点「完成」时 QML 把所有没落盘的行按所属应用分组交上来。当前编辑
+        目标的行由 QML 直接写模型，这里只处理其他应用：把那套布局临时换载
+        进模型、写入草稿行、走 _save_mapping 存盘，最后换回原目标。整个过程
+        在本槽内同步完成，模型信号只更新绑定，界面要等回到事件循环才重绘，
+        用户看不到中间状态。
+        """
+        try:
+            self._busy_for_app_edit()
+            original_target = self._mapping_edit_target
+            pending = []
+            for group in groups or []:
+                if not isinstance(group, dict):
+                    continue
+                identity = str(group.get("identity", ""))
+                if identity == original_target:
+                    continue
+                rows = [row for row in (group.get("rows") or [])
+                        if isinstance(row, dict)]
+                if not rows:
+                    continue
+                if identity:
+                    entry = self._app_profile_store().get(identity)
+                    if entry["scope"] != "app":
+                        raise ValueError("这套配置没有绑定应用程序。")
+                pending.append((identity, rows))
+            if not pending:
+                return {"ok": True, "id": original_target, "message": ""}
+            if self._mapping_dirty:
+                # 先把当前布局已有的模型改动落盘，等下临时换载别的应用时
+                # 才不会把这些行冲掉。
+                self._run_mapping_auto_save()
+                if self._mapping_dirty:
+                    raise ValueError("当前按键映射尚未保存完成，请稍后重试。")
+            try:
+                for identity, rows in pending:
+                    self._mapping_edit_target = identity
+                    self._load_bindings_into_model()
+                    for row in rows:
+                        row_index = self._model.index_of(
+                            str(row.get("buttonId", "")))
+                        if row_index < 0:
+                            continue
+                        self._model.setActionTextAt(
+                            row_index, str(row.get("primary", "")))
+                        self._model.setSecondaryActionTextAt(
+                            row_index, "double_click", str(row.get("double", "")))
+                        self._model.setSecondaryActionTextAt(
+                            row_index, "long_press", str(row.get("long", "")))
+                        self._model.setDisplayNoteAt(
+                            row_index, "single_click",
+                            str(row.get("primaryNote", "")))
+                        self._model.setDisplayNoteAt(
+                            row_index, "double_click",
+                            str(row.get("doubleNote", "")))
+                        self._model.setDisplayNoteAt(
+                            row_index, "long_press",
+                            str(row.get("longNote", "")))
+                        self._model.setInjectModeAt(
+                            row_index, str(row.get("injectMode", "sendinput")))
+                    if not self._save_mapping():
+                        raise ValueError("按键映射保存失败，请稍后重试。")
+            finally:
+                # 无论成败都把模型换回原来的编辑目标；中途换载进去的行
+                # 要么已存盘，要么随换载丢弃（保存失败时 QML 会保留草稿）。
+                if self._mapping_edit_target != original_target:
+                    self._mapping_edit_target = original_target
+                    self._load_bindings_into_model()
+            return {"ok": True, "id": original_target, "message": ""}
+        except Exception as exc:  # noqa: BLE001 - Qt slots must not escape
+            detail = str(exc)
+            message = detail if len(detail) <= 240 else detail[:240] + "…"
+            return {"ok": False, "id": self._mapping_edit_target,
+                    "message": message}
 
     def _mapping_edit_target_message(self) -> str:
         if self._mapping_edit_target:
@@ -8361,6 +8768,13 @@ class SettingsController(QObject):
             shell_targets.open_external_target(shell_targets.BLUETOOTH_SETTINGS_URI),
             self._DEVICE_PAGE_INDEX,
         )
+
+    @Slot(str)
+    def copyTextToClipboard(self, text: str) -> None:
+        # 「卡住了？求助AI」弹窗用：把万能排查提示词放进系统剪贴板，
+        # 用户直接粘贴给 AI 助手即可。
+        from PySide6.QtGui import QGuiApplication
+        QGuiApplication.clipboard().setText(text)
 
     @Slot()
     def openMicrophonePrivacySettings(self) -> None:

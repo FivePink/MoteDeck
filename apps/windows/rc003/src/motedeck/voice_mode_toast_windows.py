@@ -186,6 +186,21 @@ def _colorref(rgb: Tuple[int, int, int]) -> int:
     return int(red) | (int(green) << 8) | (int(blue) << 16)
 
 
+def _parse_text_color(text: object) -> Optional[Tuple[int, int, int]]:
+    """解析 "#RRGGBB" 字色；非法输入返回 None（沿用主题默认字色）。"""
+
+    if not isinstance(text, str):
+        return None
+    value = text.strip().removeprefix("#")
+    if len(value) != 6:
+        return None
+    try:
+        rgb = (int(value[0:2], 16), int(value[2:4], 16), int(value[4:6], 16))
+    except ValueError:
+        return None
+    return rgb
+
+
 def _capsule_coverage(
     x: float, y: float, half_x: float, radius: float, border_px: int
 ) -> Tuple[float, float]:
@@ -237,11 +252,18 @@ class VoiceModeToast:
         self._stopped = False
         self._failed = False
 
-    def show(self, text: str, theme: str = "dark", offset: int = 0) -> None:
+    def show(
+        self,
+        text: str,
+        theme: str = "dark",
+        offset: int = 0,
+        text_color: str = "",
+    ) -> None:
         """Request one bubble; never blocks and never raises.
 
         ``offset`` 是相对默认贴底位置的额外上移像素，由设置页的「调整位置」
-        写入配置；负值按 0 处理。
+        写入配置；负值按 0 处理。``text_color`` 是当前语音键徽章的 "#RRGGBB"
+        颜色：只换字色，底色和描边仍按深浅主题。
         """
 
         if sys.platform != "win32":
@@ -249,9 +271,14 @@ class VoiceModeToast:
         label = str(text or "").strip()
         if not label:
             return
-        palette = _TOAST_THEMES.get(
-            str(theme or "dark").strip().lower(), _TOAST_THEMES["dark"]
+        palette = dict(
+            _TOAST_THEMES.get(
+                str(theme or "dark").strip().lower(), _TOAST_THEMES["dark"]
+            )
         )
+        override = _parse_text_color(text_color)
+        if override is not None:
+            palette["text"] = override
         try:
             offset_px = max(0, int(offset))
         except (TypeError, ValueError):

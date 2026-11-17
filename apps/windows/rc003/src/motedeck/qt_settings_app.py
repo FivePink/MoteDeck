@@ -767,6 +767,86 @@ def _prefer_opengl_renderer() -> None:
         return
 
 
+def _install_mapping_editor_hover_relay(window) -> None:
+    """按键页编辑面板打开期间，把窗口鼠标位置转发给 QML 的旁路。
+
+    编辑面板是非模态 Popup，但它一打开，QQuickOverlay 的事件过滤器就会把
+    HoverMove/MouseMove 重定向给 Popup 后吞掉，面板外页面区域的任何 item
+    （照片热区的 HoverHandler、挂在 Overlay 上的 MouseArea 都试过）都收
+    不到悬浮事件——QML 层无解。这个窗口级事件过滤器装在窗口对象上，先于
+    Overlay 的过滤器拿到原始事件：面板打开期间把鼠标位置写进按键页根
+    item 的 editorHoverScenePos 属性，页面自己用热区矩形算命中并点亮键形
+    高亮。
+
+    按键页根 item 由 objectName（"buttonsPageRoot"）定位并缓存；页面
+    Loader 卸载后 C++ 对象失效时，属性读取会抛 RuntimeError，此时清缓存
+    并放弃转发。这里的异常全部吞掉——它只是一个锦上添花的悬浮预览，绝
+    不能让主窗口的任何事件处理因此报错。
+    """
+
+    from PySide6.QtCore import QEvent, QObject, QPointF
+
+    class _Relay(QObject):
+        def __init__(self, win):
+            super().__init__(win)
+            self._window = win
+            self._page = None
+
+        def _find_page(self):
+            try:
+                content = self._window.contentItem()
+            except RuntimeError:
+                return None
+            if content is None:
+                return None
+            stack = list(content.childItems())
+            while stack:
+                item = stack.pop()
+                try:
+                    if item.objectName() == "buttonsPageRoot":
+                        return item
+                    stack.extend(item.childItems())
+                except RuntimeError:
+                    stack = []
+            return None
+
+        def _drop_page(self):
+            self._page = None
+
+        def eventFilter(self, watched, event):
+            try:
+                etype = event.type()
+                if etype not in (
+                    QEvent.Type.MouseMove,
+                    QEvent.Type.HoverEnter,
+                    QEvent.Type.HoverMove,
+                    QEvent.Type.HoverLeave,
+                ):
+                    return False
+                page = self._page
+                if page is None:
+                    page = self._find_page()
+                    if page is None:
+                        return False
+                    self._page = page
+                if not page.property("mappingPanelOpen"):
+                    return False
+                if etype == QEvent.Type.HoverLeave:
+                    page.setProperty("editorHoverScenePos", QPointF(-1.0, -1.0))
+                    return False
+                pos = event.position()
+                page.setProperty("editorHoverScenePos", QPointF(pos.x(), pos.y()))
+            except RuntimeError:
+                self._drop_page()
+            return False
+
+    relay = _Relay(window)
+    window.installEventFilter(relay)
+    # 返回值必须被调用方保活：没有 Python 引用时 PySide 可能回收包装对象，
+    # 事件过滤器的 Python 覆写会随之失效。
+    return relay
+
+
 def run_settings_window(
     *, start_hidden: bool = False, start_bridge: bool = False
 ) -> int:
@@ -818,10 +898,10 @@ def run_settings_window(
     root_window = None
 
     def update_application_icon() -> None:
-        # The window's own icon (title bar + taskbar) stays on the fixed brand
-        # .ico asset regardless of service state; only the tray icon reflects
-        # it (see SettingsController._tray_icon_source).
-        path = resources.find_window_icon()
+        # The window's own icon (title bar + taskbar) follows the brand icon
+        # mode (Milo vs. MoteDeck classic); only the tray icon additionally
+        # reflects the service state (see SettingsController._tray_icon_source).
+        path = resources.find_window_icon(classic=controller.brandIconMode == 1)
         if path is not None:
             _apply_application_icon(app, root_window, QIcon, path)
 
@@ -890,13 +970,26 @@ def run_settings_window(
         root_window = root_objects[0]
         update_application_icon()
         window_chrome_windows.apply_settings_window_chrome(root_window)
-        window_chrome_windows.install_frameless_window(root_window)
-        window_icon = resources.find_window_icon()
-        if window_icon is not None:
-            window_chrome_windows.apply_native_window_icon(
-                root_window,
-                str(window_icon),
+        window_chrome_windows.install_frameless_window(root_window, resizable=False)
+        # 过滤器返回值必须保活到窗口关闭（见函数 docstring）：没有 Python
+        # 引用时 PySide 可能回收包装对象，Python 覆写的 eventFilter 随之失效。
+        mapping_editor_hover_relay = _install_mapping_editor_hover_relay(
+            root_window
+        )
+
+        def update_native_window_icon() -> None:
+            path = resources.find_window_icon(
+                classic=controller.brandIconMode == 1
             )
+            if path is not None:
+                window_chrome_windows.apply_native_window_icon(
+                    root_window,
+                    str(path),
+                )
+
+        update_native_window_icon()
+        controller.brandIconModeChanged.connect(update_application_icon)
+        controller.brandIconModeChanged.connect(update_native_window_icon)
 
         # The real QML window and full-exit signal are ready here. Publish the
         # capability before optional element navigation startup, whose bounded

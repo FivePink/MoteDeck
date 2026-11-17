@@ -65,7 +65,9 @@ VOICE_KEY_FIELDS = ("id", "name", "hotkey", "source", "device", "enabled", "plug
 # 快照里没有这些字段，所以它们只能是可选字段，不能参与“字段集合必须完全相等”
 # 的校验，否则老数据会让整份配置读取失败。
 OPTIONAL_VOICE_KEY_FIELDS = ("short_press_resend", "gain_steps", "gain_auto",
-                            "tsf_switch", "tsf_profile", "plugin_mode")
+                            "tsf_switch", "tsf_profile", "plugin_mode",
+                            "badge_text", "badge_glyph", "badge_color",
+                            "badge_bg")
 VOICE_KEYS_FIELD = "voice_keys"
 ENTRY_FIELDS = ("id", "name", "scope", "process", "hotkey", "mapping",
                 *VOICE_FIELDS, VOICE_KEYS_FIELD)
@@ -206,7 +208,16 @@ def validate_voice_keys(value: object) -> list[dict]:
                        "gain_auto": raw.get("gain_auto", False) is not False,
                        "tsf_switch": tsf_enabled,
                        "tsf_profile": (config._normalize_tsf_profile(
-                           raw.get("tsf_profile", "")) if tsf_enabled else "")})
+                           raw.get("tsf_profile", "")) if tsf_enabled else ""),
+                       # 徽章（单字/图标/颜色）：旧快照里没有，可选字段。
+                       "badge_text": config._normalize_voice_badge_text(
+                           raw.get("badge_text", "")),
+                       "badge_glyph": config._normalize_voice_badge_glyph(
+                           raw.get("badge_glyph", "")),
+                       "badge_color": config._normalize_voice_badge_color(
+                           raw.get("badge_color", "")),
+                       "badge_bg": config._normalize_voice_badge_bg(
+                           raw.get("badge_bg", ""))})
     return result
 
 

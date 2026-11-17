@@ -28,7 +28,8 @@ Dialog {
     closePolicy: dismissalEnabled ? Popup.CloseOnEscape : Popup.NoAutoClose
 
     background: Rectangle {
-        radius: root.tokens.cornerRadiusLarge
+        // 与页面卡片一致的圆角（cornerRadiusCard），弹窗统一走这里。
+        radius: root.tokens.cornerRadiusCard
         color: root.tokens.surface
         border.width: root.tokens.hairlineWidth
         border.color: root.tokens.border

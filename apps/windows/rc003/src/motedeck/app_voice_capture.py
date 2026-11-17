@@ -859,9 +859,14 @@ class VoiceCaptureMixin:
         name = config.voice_key_name(self._config, slot)
         if not name:
             return
+        # 切换气泡的字色跟随这条语音键的徽章颜色；未设颜色时用主题默认。
+        badge = config.voice_key_badge(self._config, slot)
         try:
             self._voice_mode_toast.show(
-                name, theme, config.voice_cycle_toast_offset(self._config)
+                name,
+                theme,
+                config.voice_cycle_toast_offset(self._config),
+                text_color=str(badge.get("color") or ""),
             )
         except BaseException as exc:  # noqa: BLE001 - the bubble is best effort
             self._logger.warning(

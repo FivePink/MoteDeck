@@ -942,14 +942,15 @@ class ButtonRoutingMixin:
 
         Injected keys never auto-repeat, so a physical hold is simulated by the
         app.  Held buttons re-send only the key-down through
-        ``backend.key_repeat`` until release (the matching key-up is delivered
-        once by ``_end_button_key_hold``), which makes them feel like a
-        physical keyboard hold.  The repeat never runs the physical-key
-        preflight: the held key-down is this process's own injection and a
-        preflight would mistake it for a physically held key.  SendInput-held
-        direction, backspace and volume buttons re-run the whole click instead,
-        as does element navigation, which consumes mapped navigation keys
-        itself.
+        ``backend.key_down(require_tracked_hold=False)`` until release (the
+        matching key-up is delivered once by ``_end_button_key_hold``), which
+        keeps the target seeing one sustained key press.  The repeat never runs
+        the physical-key preflight: the held key-down is this process's own
+        injection and a preflight would mistake it for a physically held key.
+        SendInput direction, backspace and volume buttons keep the original
+        click-repeat behaviour instead (they re-run the whole click, see
+        ``_begin_button_key_hold``), as does element navigation, which consumes
+        mapped navigation keys itself.
         """
 
         with self._button_action_lock:
@@ -957,7 +958,7 @@ class ButtonRoutingMixin:
             if entry is not None:
                 tokens, backend = entry
                 try:
-                    backend.key_repeat(tokens)
+                    backend.key_down(tokens, require_tracked_hold=False)
                 except injection_backend.DriverUnavailableError as exc:
                     self._logger.warning(
                         "button hold repeat skipped: driver backend "

@@ -263,6 +263,10 @@ def _default_voice_key_config(
     gain_auto: bool = False,
     tsf_switch: bool = False,
     tsf_profile: str = "",
+    badge_text: str = "",
+    badge_glyph: str = "",
+    badge_color: str = "",
+    badge_bg: str = "",
 ) -> Dict[str, Any]:
     plugin_id = _normalize_plugin_id(plugin)
     # 插件键的快捷键由插件接管，TSF 切换同理，插件项永远不保存这两个字段。
@@ -296,7 +300,99 @@ def _default_voice_key_config(
         "tsf_profile": (
             _normalize_tsf_profile(tsf_profile) if tsf_enabled else ""
         ),
+        # 语音键徽章：方框里的单字/图标与文字颜色，用于托盘指示当前语音
+        # 模式和切换气泡的着色。三项都为空时按自动规则显示（命名取首字，
+        # 未命名取列表位置数字），颜色跟随主题默认字色。badge_bg 强制方框
+        # 底色（dark/light），空串跟随系统深浅模式。
+        "badge_text": _normalize_voice_badge_text(badge_text),
+        "badge_glyph": _normalize_voice_badge_glyph(badge_glyph),
+        "badge_color": _normalize_voice_badge_color(badge_color),
+        "badge_bg": _normalize_voice_badge_bg(badge_bg),
     }
+
+
+def _normalize_voice_badge_text(value: object) -> str:
+    """徽章单字：只保留一个字符（用户输入的名称首字/自定义单字）。"""
+
+    if not isinstance(value, str):
+        return ""
+    return value.strip()[:1]
+
+
+def _normalize_voice_badge_glyph(value: object) -> str:
+    """徽章图标：存 Segoe Fluent/MDL2 码点（如 E720），渲染时转字符。"""
+
+    if not isinstance(value, str):
+        return ""
+    text = value.strip().upper().removeprefix("U+")
+    if not text:
+        return ""
+    try:
+        code = int(text, 16)
+    except ValueError:
+        return ""
+    if not 0xE000 <= code <= 0xF8FF:
+        return ""
+    return f"{code:04X}"
+
+
+def _normalize_voice_badge_color(value: object) -> str:
+    """徽章颜色：只接受 #RRGGBB，空串表示跟随主题默认字色。"""
+
+    if not isinstance(value, str):
+        return ""
+    text = value.strip().upper()
+    if not text:
+        return ""
+    if not text.startswith("#"):
+        text = "#" + text
+    body = text[1:]
+    if len(body) != 6 or any(c not in "0123456789ABCDEF" for c in body):
+        return ""
+    return "#" + body
+
+
+def _normalize_voice_badge_bg(value: object) -> str:
+    """徽章方框底色：dark/light 强制深浅，空串跟随系统深浅模式。"""
+
+    if not isinstance(value, str):
+        return ""
+    text = value.strip().casefold()
+    return text if text in ("dark", "light") else ""
+
+
+def voice_key_badge(config_data: Dict[str, Any], slot: int) -> Dict[str, str]:
+    """Return one voice key's badge (glyph/text/color + auto display)."""
+
+    empty = {"glyph": "", "text": "", "color": "", "bg": "", "display": "", "auto": True}
+    try:
+        slot_number = int(slot)
+    except (TypeError, ValueError):
+        return empty
+    for position, entry in enumerate(voice_key_configs(config_data), start=1):
+        if entry["id"] != slot_number:
+            continue
+        glyph = entry.get("badge_glyph", "")
+        text = entry.get("badge_text", "")
+        color = entry.get("badge_color", "")
+        auto = not glyph and not text
+        if glyph:
+            display = chr(int(glyph, 16))
+        elif text:
+            display = text
+        else:
+            # 自动规则：命名了取首字，未命名按列表位置显示 1、2、3...
+            name = _normalize_voice_key_name(entry.get("name"))
+            display = name[:1] if name else str(position)
+        return {
+            "glyph": glyph,
+            "text": text,
+            "color": color,
+            "bg": str(entry.get("badge_bg", "") or ""),
+            "display": display,
+            "auto": auto,
+        }
+    return empty
 
 
 def _normalize_tsf_profile(value: object) -> str:
@@ -354,10 +450,6 @@ def default_config() -> Dict[str, Any]:
         # 之间循环切换；每条语音键还可以单独打开“短按延迟发送”，把这一次
         # 快捷键推迟下发，避开输入法的短按/长按竞争。
         "voice_cycle_short_press": True,
-        # 使用其他按键切换模式（可选，默认关闭）。打开后按键设置页的单击、
-        # 双击、长按动作里会多出“语音模式切换”，任意按键（语音键除外）都能
-        # 用来切模式；话筒键同时跟随切换后的语音键。
-        "voice_other_key_switch": False,
         # 切换模式时在鼠标所在屏幕底部弹出的小气泡配色：dark / light / off。
         "voice_cycle_toast_theme": VOICE_CYCLE_TOAST_DARK,
         # 气泡相对默认底部位置的额外上移像素，0 表示贴默认位置。
@@ -380,6 +472,13 @@ def default_config() -> Dict[str, Any]:
         "openmexia_auto_connect": False,
         "diagnostic_trace_enabled": False,
         "close_behavior": CLOSE_BEHAVIOR_HIDE_TO_TRAY,
+        # 窗口图标风格：0 = Milo（现在的小人图标，默认），1 = MoteDeck 经典
+        # （0.2.0 老胶囊图标）。左上角、托盘、窗口图标、关于页全部跟随。
+        "brand_icon_mode": 0,
+        # 在托盘指示当前语音模式：开启后托盘图标显示当前语音键的徽章
+        # （方框+单字/图标，颜色用徽章设置的颜色）。0.3.0 起默认打开：新
+        # 用户与升级用户（旧配置没有这个键，落到默认值）第一次都直接看到。
+        "voice_tray_badge_enabled": True,
         # A portable build offers each exact helper binary once. The explicit
         # device-page action remains available after the automatic prompt.
         "hid_helper_setup_prompted_offer_id": "",
@@ -787,6 +886,10 @@ def _normalize_voice_key_configs(config: Dict[str, Any]) -> None:
             gain_auto=raw_entry.get("gain_auto", False) is not False,
             tsf_switch=raw_entry.get("tsf_switch", False) is not False,
             tsf_profile=raw_entry.get("tsf_profile", ""),
+            badge_text=raw_entry.get("badge_text", ""),
+            badge_glyph=raw_entry.get("badge_glyph", ""),
+            badge_color=raw_entry.get("badge_color", ""),
+            badge_bg=raw_entry.get("badge_bg", ""),
         )
         normalized.append(entry)
     if not normalized:
@@ -808,9 +911,6 @@ def _normalize_voice_key_configs(config: Dict[str, Any]) -> None:
     # 键的“短按延迟发送”把那一次按键推迟下发。运行时按具体槽位判断。
     cycle = bool(config.get("voice_cycle_short_press", True))
     config["voice_cycle_short_press"] = cycle
-    config["voice_other_key_switch"] = bool(
-        config.get("voice_other_key_switch", False)
-    )
     theme = str(config.get("voice_cycle_toast_theme", VOICE_CYCLE_TOAST_DARK)).strip().lower()
     if theme not in VOICE_CYCLE_TOAST_THEMES:
         theme = VOICE_CYCLE_TOAST_DARK
@@ -854,6 +954,10 @@ def voice_key_configs(config_data: Dict[str, Any]) -> List[Dict[str, Any]]:
             gain_auto=raw_entry.get("gain_auto", False) is not False,
             tsf_switch=raw_entry.get("tsf_switch", False) is not False,
             tsf_profile=raw_entry.get("tsf_profile", ""),
+            badge_text=raw_entry.get("badge_text", ""),
+            badge_glyph=raw_entry.get("badge_glyph", ""),
+            badge_color=raw_entry.get("badge_color", ""),
+            badge_bg=raw_entry.get("badge_bg", ""),
         )
         entries.append(entry)
     if not entries:
@@ -1032,16 +1136,6 @@ def voice_cycle_short_press(config_data: Dict[str, Any]) -> bool:
     return bool(config_data.get("voice_cycle_short_press", True))
 
 
-def voice_other_key_switch(config_data: Dict[str, Any]) -> bool:
-    """Return whether ordinary buttons may switch the active voice mode.
-
-    It only unlocks the "语音模式切换" mapping action; the switch itself is
-    still performed by whichever gesture the user maps it to.
-    """
-
-    return bool(config_data.get("voice_other_key_switch", False))
-
-
 def voice_cycle_toast_theme(config_data: Dict[str, Any]) -> str:
     """Return the mode-switch bubble palette: ``dark``, ``light`` or ``off``."""
 
@@ -1087,6 +1181,10 @@ def update_voice_key_config(
     gain_auto: object = _VOICE_KEY_FIELD_UNSET,
     tsf_switch: object = _VOICE_KEY_FIELD_UNSET,
     tsf_profile: object = _VOICE_KEY_FIELD_UNSET,
+    badge_text: object = _VOICE_KEY_FIELD_UNSET,
+    badge_glyph: object = _VOICE_KEY_FIELD_UNSET,
+    badge_color: object = _VOICE_KEY_FIELD_UNSET,
+    badge_bg: object = _VOICE_KEY_FIELD_UNSET,
     force: bool = False,
 ) -> Dict[str, Any]:
     """Return a copy with one voice key's fields replaced.
@@ -1131,6 +1229,15 @@ def update_voice_key_config(
         target.get("plugin")
     ):
         target["tsf_profile"] = _normalize_tsf_profile(tsf_profile)
+    # 徽章（单字/图标/颜色/底色）对每条语音键都开放，插件键也能改。
+    if badge_text is not _VOICE_KEY_FIELD_UNSET:
+        target["badge_text"] = _normalize_voice_badge_text(badge_text)
+    if badge_glyph is not _VOICE_KEY_FIELD_UNSET:
+        target["badge_glyph"] = _normalize_voice_badge_glyph(badge_glyph)
+    if badge_color is not _VOICE_KEY_FIELD_UNSET:
+        target["badge_color"] = _normalize_voice_badge_color(badge_color)
+    if badge_bg is not _VOICE_KEY_FIELD_UNSET:
+        target["badge_bg"] = _normalize_voice_badge_bg(badge_bg)
     if source is not _VOICE_KEY_FIELD_UNSET:
         target["source"] = _normalize_voice_source(source)
         if target["source"] == VOICE_INPUT_SOURCE_REMOTE:
@@ -1271,6 +1378,27 @@ def set_voice_key_config_enabled(
     """Return a copy with one voice key switched on or off."""
 
     return update_voice_key_config(config_data, int(slot), enabled=bool(enabled))
+
+
+def set_voice_key_config_badge(
+    config_data: Dict[str, Any],
+    slot: int,
+    *,
+    text: str = "",
+    glyph: str = "",
+    color: str = "",
+    bg: str = "",
+) -> Dict[str, Any]:
+    """Return a copy with one voice key's badge (text/glyph/color/bg) updated."""
+
+    return update_voice_key_config(
+        config_data,
+        int(slot),
+        badge_text=text,
+        badge_glyph=glyph,
+        badge_color=color,
+        badge_bg=bg,
+    )
 
 
 def set_voice_key_config_short_press_resend(

@@ -11,6 +11,9 @@ ApplicationWindow {
     height: 660
     minimumWidth: 880
     minimumHeight: 660
+    // 固定尺寸窗口：不允许拖拽调整大小，也不允许最大化。
+    maximumWidth: 880
+    maximumHeight: 660
     visible: true
     color: tokens.background
 
@@ -41,13 +44,6 @@ ApplicationWindow {
         window.raise()
         window.requestActivate()
         SettingsController.refreshBridgeState()
-    }
-
-    function toggleMaximized() {
-        if (window.visibility === Window.Maximized)
-            window.showNormal()
-        else
-            window.showMaximized()
     }
 
     function buttonsPage() {
@@ -119,6 +115,11 @@ ApplicationWindow {
         }
         settleInputUiAfterStop()
         pendingPageIndex = -1
+        // 离开按键页前先把编辑面板直接藏起来（不改页面布局），
+        // 这样切页那一帧不会看到面板跟着滑出去。
+        const currentPage = buttonsPage()
+        if (currentPage && tabBar.currentIndex === 1 && index !== 1)
+            currentPage.hideEditorForPageSwitch()
         tabBar.currentIndex = index
     }
 
@@ -674,6 +675,51 @@ ApplicationWindow {
         }
     }
 
+    BrandIconDialog {
+        id: brandIconDialog
+        tokens: window.tokens
+    }
+
+    // 托盘菜单的行与分隔线：与设置界面同一套 tokens 的自绘样式，
+    // 不用系统默认菜单。
+    component TrayMenuAction: Rectangle {
+        id: trayMenuActionRoot
+        property string label: ""
+        property bool danger: false
+        signal triggered()
+        width: 216
+        height: 34
+        radius: window.tokens.cornerRadiusControl
+        color: enabled && actionHover.containsMouse
+            ? window.tokens.hover : "transparent"
+
+        Text {
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.left: parent.left
+            anchors.leftMargin: 10
+            text: trayMenuActionRoot.label
+            color: !trayMenuActionRoot.enabled
+                ? window.tokens.disabledText
+                : (trayMenuActionRoot.danger
+                    ? window.tokens.errorColor : window.tokens.textPrimary)
+            font.family: window.tokens.fontFamily
+            font.pixelSize: window.tokens.fontSizeBody
+        }
+        MouseArea {
+            id: actionHover
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: trayMenuActionRoot.triggered()
+        }
+    }
+
+    component TrayMenuSeparator: Rectangle {
+        width: 216
+        height: 1
+        color: window.tokens.line
+    }
+
     Platform.SystemTrayIcon {
         id: systemTrayIcon
         objectName: "systemTrayIcon"
@@ -684,16 +730,127 @@ ApplicationWindow {
         onActivated: function(reason) {
             if (reason !== Platform.SystemTrayIcon.Context)
                 window.restoreWindow()
+            else
+                trayMenuWindow.toggleAtCursor()
         }
-        menu: Platform.Menu {
-            Platform.MenuItem {
-                text: qsTr("打开%1").arg(SettingsController.applicationDisplayName)
-                onTriggered: window.restoreWindow()
+    }
+
+    // 托盘右键菜单：自绘无边框弹出窗（Qt.Popup），样式跟随设置界面的
+    // 深浅色 tokens，替代系统默认菜单 UI。
+    Window {
+        id: trayMenuWindow
+        objectName: "trayMenuWindow"
+        visible: false
+        flags: Qt.Popup | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint
+        color: "transparent"
+        width: trayMenuPanel.width
+        height: trayMenuPanel.height
+
+        function toggleAtCursor() {
+            if (visible) {
+                close()
+                return
             }
-            Platform.MenuSeparator {}
-            Platform.MenuItem {
-                text: qsTr("完全退出")
-                onTriggered: window.requestFullExit()
+            const cursor = SettingsController.cursorPosition()
+            const screen = trayMenuWindow.Screen
+            // 垂直：任务栏一般在屏幕下缘，菜单底部贴着光标上方一点；
+            // 水平：菜单从光标右侧弹出，贴着屏幕右缘放不下时退回左侧，
+            // 再夹进当前屏幕的可用区域，任何光标位置都不出屏。
+            const pad = window.tokens.spacingSmall
+            x = Math.round(Math.max(
+                screen.virtualX + pad,
+                Math.min(cursor.x + pad,
+                    screen.virtualX + screen.desktopAvailableWidth
+                        - trayMenuPanel.width - pad)))
+            y = Math.round(Math.max(
+                screen.virtualY + pad,
+                Math.min(cursor.y - trayMenuPanel.height - pad,
+                    screen.virtualY + screen.desktopAvailableHeight
+                        - trayMenuPanel.height - pad)))
+            visible = true
+        }
+
+        // 点击菜单以外或切到别的窗口就收起：popup 失去激活即关闭；
+        // callLater 避免在刚弹出的当帧误判成非激活。
+        onActiveChanged: {
+            if (!active && visible)
+                Qt.callLater(function() {
+                    if (!trayMenuWindow.active)
+                        trayMenuWindow.close()
+                })
+        }
+
+        Rectangle {
+            id: trayMenuPanel
+            focus: true
+            Keys.onEscapePressed: trayMenuWindow.close()
+            width: trayMenuColumn.width + 2 * 8
+            height: trayMenuColumn.height + 2 * 8
+            radius: window.tokens.cornerRadiusCard
+            color: window.tokens.darkMode ? "#1f1f1f" : "#f7f7f8"
+            border.width: 1
+            border.color: window.tokens.darkMode
+                ? "#3a3a3a" : "#d9d9dc"
+
+            Column {
+                id: trayMenuColumn
+                x: 8
+                y: 8
+                spacing: 2
+
+                TrayMenuAction {
+                    objectName: "trayMenuOpenWindow"
+                    label: qsTr("打开%1").arg(
+                        SettingsController.applicationDisplayName)
+                    onTriggered: {
+                        trayMenuWindow.close()
+                        window.restoreWindow()
+                    }
+                }
+                TrayMenuAction {
+                    objectName: "trayMenuBridgeToggle"
+                    enabled: !SettingsController.bridgeLaunchBusy
+                        && SettingsController.bridgeLaunchPhase !== "stopping"
+                        && !SettingsController.configurationReadOnly
+                        && !DiagnosticsController.vbCableTestRunning
+                        && !DiagnosticsController.driverActionRunning
+                        && !SettingsController.voiceHotkeyBusy
+                        && !SettingsController.endpointPreflightBusy
+                    label: SettingsController.bridgeLaunchPhase === "stopping"
+                        ? qsTr("服务停止中…")
+                        : SettingsController.bridgeRunning
+                          ? qsTr("关闭服务")
+                          : SettingsController.bridgeLaunchBusy
+                            ? qsTr("服务启动中…") : qsTr("启动服务")
+                    onTriggered: {
+                        trayMenuWindow.close()
+                        if (SettingsController.bridgeRunning)
+                            SettingsController.stopBridge()
+                        else
+                            SettingsController.startBridge()
+                    }
+                }
+                TrayMenuAction {
+                    objectName: "trayMenuReconnect"
+                    visible: SettingsController.bridgeReconnectAvailable
+                    enabled: !SettingsController.bridgeReconnectBusy
+                    label: SettingsController.bridgeReconnectBusy
+                        ? qsTr("正在重新连接…") : qsTr("重新连接")
+                    onTriggered: {
+                        trayMenuWindow.close()
+                        SettingsController.reconnectBridgeNow()
+                    }
+                }
+                TrayMenuSeparator {}
+                TrayMenuAction {
+                    objectName: "trayMenuFullExit"
+                    danger: true
+                    label: qsTr("完全退出")
+                    onTriggered: {
+                        trayMenuWindow.close()
+                        window.requestFullExit()
+                    }
+                }
             }
         }
     }
@@ -718,11 +875,12 @@ ApplicationWindow {
     Timer {
         id: bridgeStatusRefreshTimer
         objectName: "bridgeStatusRefreshTimer"
+        // 托盘徽章要跟着语音模式走，轮询必须足够密才能跟手。
         interval: SettingsController.bridgeLaunchPhase === "saving"
             || SettingsController.bridgeLaunchPhase === "starting"
             || SettingsController.bridgeLaunchPhase === "waiting"
             || SettingsController.bridgeLaunchPhase === "reconnecting"
-            ? 1000 : 2000
+            ? 500 : 600
         repeat: true
         running: true
         onTriggered: SettingsController.refreshBridgeState()
@@ -791,11 +949,30 @@ ApplicationWindow {
                 y: 24
                 width: 24
                 height: 24
-                source: window.darkMode ? "assets/brand-mark-dark.svg" : "assets/brand-mark.svg"
+                // 图标风格跟随 brandIconMode：0 = Milo（默认），1 = MoteDeck 经典。
+                // 左上角固定用扁平版：深色模式下老图标整体反色，新图标去背景不反色。
+                source: {
+                    if (SettingsController.brandIconMode === 1)
+                        return window.darkMode
+                            ? "assets/brand-mark-classic-dark.svg"
+                            : "assets/brand-mark-classic.svg"
+                    return window.darkMode
+                        ? "assets/brand-mark-dark.svg" : "assets/brand-mark.svg"
+                }
                 sourceSize.width: width * Screen.devicePixelRatio
                 sourceSize.height: height * Screen.devicePixelRatio
                 smooth: true
                 fillMode: Image.PreserveAspectFit
+                opacity: logoClickArea.containsMouse ? 0.8 : 1.0
+                Behavior on opacity { NumberAnimation { duration: 80 } }
+
+                MouseArea {
+                    id: logoClickArea
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: brandIconDialog.open()
+                }
             }
 
             Column {
@@ -895,10 +1072,9 @@ ApplicationWindow {
                 MouseArea {
                     objectName: "titleBarDragArea"
                     anchors.fill: parent
-                    anchors.rightMargin: 3 * 34 + 8
+                    anchors.rightMargin: 2 * 34 + 8
                     acceptedButtons: Qt.LeftButton
                     onPressed: window.startSystemMove()
-                    onDoubleClicked: window.toggleMaximized()
                 }
 
                 Row {
@@ -913,14 +1089,6 @@ ApplicationWindow {
                         kind: "minimize"
                         onClicked: window.showMinimized()
                         Accessible.name: qsTr("最小化")
-                    }
-                    TitleBarButton {
-                        objectName: "maximizeWindowButton"
-                        tokens: window.tokens
-                        kind: window.visibility === Window.Maximized ? "restore" : "maximize"
-                        onClicked: window.toggleMaximized()
-                        Accessible.name: window.visibility === Window.Maximized
-                            ? qsTr("还原") : qsTr("最大化")
                     }
                     TitleBarButton {
                         objectName: "closeWindowButton"
@@ -1166,4 +1334,5 @@ ApplicationWindow {
             }
         }
     }
+
 }

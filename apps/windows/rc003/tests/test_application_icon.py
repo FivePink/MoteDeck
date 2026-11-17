@@ -106,10 +106,16 @@ class ApplicationIconTests(unittest.TestCase):
         qml_dir = _RC003_ROOT / "src" / "motedeck" / "qml"
         main = (qml_dir / "main.qml").read_text(encoding="utf-8")
         logo = main.split('id: appLogo', 1)[1].split('Column {', 1)[0]
+        # Milo（默认）沿用原规则：深色模式去背景不反色；MoteDeck 经典整体反色。
         self.assertIn(
-            'source: window.darkMode ? "assets/brand-mark-dark.svg" : "assets/brand-mark.svg"',
+            '? "assets/brand-mark-dark.svg" : "assets/brand-mark.svg"',
             logo,
         )
+        self.assertIn(
+            '? "assets/brand-mark-classic-dark.svg"',
+            logo,
+        )
+        self.assertIn(': "assets/brand-mark-classic.svg"', logo)
         self.assertNotIn("remote-mic.png", logo)
         light = ElementTree.parse(qml_dir / "assets/brand-mark.svg").getroot()
         dark = ElementTree.parse(qml_dir / "assets/brand-mark-dark.svg").getroot()
@@ -191,9 +197,11 @@ class ApplicationIconTests(unittest.TestCase):
 
         self.assertNotIn("find_app_icon(controller._tray_icon_state())", source)
         self.assertNotIn("trayStateChanged.connect(update_application_icon)", source)
-        self.assertIn("path = resources.find_window_icon()", source)
+        # The window icon follows the brand icon mode (brandIconModeChanged),
+        # never the tray state.
+        self.assertIn("resources.find_window_icon(", source)
         self.assertIn("window_chrome_windows.apply_native_window_icon(", source)
-        self.assertIn("str(window_icon)", source)
+        self.assertIn("update_native_window_icon()", source)
 
     def test_builds_regenerate_the_shared_windows_icon(self):
         local_build = (_RC003_ROOT / "build" / "build-candidate.ps1").read_text(

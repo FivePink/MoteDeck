@@ -153,15 +153,20 @@ try:
     assert controller.mappingEditTarget == app_id, controller.mappingEditTarget
 
     # Editing the button page now writes that application's layout and leaves
-    # the global key_bindings.json untouched.
+    # the global key_bindings.json untouched. 面板改成右侧抽屉：上面点手势、
+    # 下面点分类里的动作，点完立刻落盘。
     before_global = json.dumps(config.load_key_bindings(key_bindings_path), sort_keys=True)
     click('editMapping_ok')
+    QTest.qWait(450)
     assert find('actionEditorDialog').property('visible')
-    find('actionEditorLongCombo').setProperty('editText', '鼠标左键长按')
+    click('mappingLongCell_editor_ok')
+    # All groups start collapsed now; open the key-action group first.
+    click('actionEditorSection_按键操作')
+    click('actionEditorAction_Escape')
     click('actionEditorSaveButton')
     def app_saved():
         actions = store.get(app_id)['mapping']['secondary_bindings'].get('ok', {})
-        return actions.get('long_press', {}).get('kind') == 'mouse_left_hold'
+        return actions.get('long_press', {}).get('kind') == 'escape'
     wait_for(app_saved)
     assert json.dumps(config.load_key_bindings(key_bindings_path), sort_keys=True) == before_global
 

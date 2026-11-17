@@ -132,21 +132,6 @@ class VoiceConfigMixin:
 
         return config.voice_cycle_short_press(self._config)
 
-    def _voice_other_key_switch_enabled(self) -> bool:
-        """Whether other buttons may switch the active voice mode."""
-
-        return config.voice_other_key_switch(self._config)
-
-    def _voice_cycle_follows_mic(self) -> bool:
-        """Whether the microphone uses the cycled voice key instead of its own.
-
-        Both switching entries (mic short press and another mapped button)
-        move the same cursor, so as soon as either one is enabled the mic must
-        follow it - otherwise a switch would appear to do nothing.
-        """
-
-        return self._voice_cycle_enabled() or self._voice_other_key_switch_enabled()
-
     def _voice_cycle_slots(self) -> List[int]:
         """Every enabled voice key id, in the order the user listed them."""
 
@@ -158,17 +143,10 @@ class VoiceConfigMixin:
     def _active_voice_slot(self) -> int:
         """The voice key a physical mic press currently drives.
 
-        开启短按切换模式后，话筒键不再看它自己绑的是哪一条，而是跟着循环
-        游标走；关闭时保持原样，即话筒键绑定的那个语音槽。
+        话筒键跟着循环游标走（短按切换，或映射成“语音模式切换”的其他
+        按键都能推进游标）；游标起点是话筒键自己绑定的那条语音键。
         """
 
-        if not self._voice_cycle_follows_mic():
-            return (
-                key_mapping.voice_slot_for_action(
-                    self._primary_button_action("mic")
-                )
-                or 1
-            )
         slots = self._voice_cycle_slots()
         if not slots:
             return 1
@@ -294,9 +272,8 @@ class VoiceConfigMixin:
                 self._configured_voice_buttons(),
             )
             return False
-        if button_id == "mic" and self._voice_cycle_follows_mic():
-            # 短按切换模式 / 其他按键切换模式下，话筒键跟着循环游标走，
-            # 而不是它自己绑的那一条。
+        if button_id == "mic":
+            # 话筒键跟着循环游标走，而不是它自己绑的那一条。
             slot = self._active_voice_slot()
         else:
             slot = key_mapping.voice_slot_for_action(action)
@@ -316,7 +293,7 @@ class VoiceConfigMixin:
         # 切到 OpenMexia 那条语音键时，整套按键临时换成米家设备那套配置。
         self._schedule_openmexia_profile_for_slot(slot)
         hotkey_text = self._voice_hotkey_text_for_slot(slot)
-        if not hotkey_text and button_id == "mic" and self._voice_cycle_follows_mic():
+        if not hotkey_text and button_id == "mic":
             # 循环到的这条语音键还没录快捷键：清空当前热键即可。注入空
             # token 是无害的空转，切换本身仍然照常工作。
             if self._voice_shortcut.hotkey is not None:
@@ -535,6 +512,7 @@ class VoiceConfigMixin:
         self._end_latched_voice_session_for_cycle_locked()
         slot = self._advance_voice_cycle_slot_locked()
         self._show_voice_mode_toast(slot)
+        self._set_runtime_voice_active_slot(slot)
         self._schedule_openmexia_profile_for_slot(slot)
         self._logger.info(
             "voice mode switched by short press: slot=%s reason=%s",
@@ -551,20 +529,13 @@ class VoiceConfigMixin:
         always continue from the mode currently in use.
         """
 
-        if not self._voice_other_key_switch_enabled():
-            self._logger.info(
-                "voice mode switch ignored: other-key switch is off; "
-                "button=%s trigger=%s",
-                button_id,
-                trigger.value,
-            )
-            return
         with self._voice_shortcut.lock:
             if not self._voice_cycle_slots():
                 return
             self._end_latched_voice_session_for_cycle_locked()
             slot = self._advance_voice_cycle_slot_locked()
             self._show_voice_mode_toast(slot)
+            self._set_runtime_voice_active_slot(slot)
         self._schedule_openmexia_profile_for_slot(slot)
         self._logger.info(
             "voice mode switched by button: slot=%s button=%s trigger=%s",

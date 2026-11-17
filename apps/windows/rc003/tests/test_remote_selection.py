@@ -32,9 +32,10 @@ def saved_selection(active=A):
 
 class SelectionContractTests(unittest.TestCase):
     def test_scan_names_survive_result_transfer_without_enabling_unsupported_devices(self):
+        # "mi rc" 是两款小米遥控器共用的广播名，型号串读不到时按遥控器2兜底。
         devices = [SimpleNamespace(name=name, properties={"System.Devices.Aep.ContainerId": value})
                    for name, value in (
-                       (next(iter(identity.device_profile.BLUETOOTH_NAMES)), "11111111-1111-4111-8111-111111111111"),
+                       ("mi rc", "11111111-1111-4111-8111-111111111111"),
                        ("Google TV Remote", "22222222-2222-4222-8222-222222222222"),
                        (" \x00\n ", "33333333-3333-4333-8333-333333333333"))]
         winrt = SimpleNamespace(
@@ -44,14 +45,14 @@ class SelectionContractTests(unittest.TestCase):
             path = Path(directory) / "scan.json"
             self.assertEqual(selection.scan_main([str(path)]), 0)
             rows = {row["key"]: row for row in selection._read_scan_result(str(path), 0)}
-            self.assertEqual(rows[A]["label"], selection.label(A))
+            self.assertEqual(rows[A]["label"], selection.label(A, selection.RC001_PROFILE))
             self.assertEqual(rows[B]["label"], "Google TV Remote（暂不支持）")
             unnamed = selection.container_key(devices[2].properties["System.Devices.Aep.ContainerId"])
             self.assertEqual(rows[unnamed]["label"], f"未命名蓝牙设备 · {unnamed[:6].upper()}（暂不支持）")
             with self.assertRaises(selection.SelectionError):
                 selection.add_device(selection.empty_selection(), rows[B])
             saved = selection.add_device(selection.empty_selection(), rows[A])
-            self.assertEqual(saved["devices"], [{"key": A, "profile": "xiaomi-rc003"}])
+            self.assertEqual(saved["devices"], [{"key": A, "profile": "xiaomi-rc001"}])
 
     def test_old_config_requires_explicit_choice_without_touching_mappings(self):
         self.assertEqual(selection.active_key(config.default_config()), "")
@@ -128,11 +129,50 @@ class SelectionContractTests(unittest.TestCase):
             device_catalog.profile_for(selection.RC003_PROFILE).display_name + " ·"))
         self.assertTrue(all(item.close.called for item in opened.values()))
 
+    def test_unconfirmed_model_falls_back_to_remote_2_not_pro(self):
+        # “MI RC”两款共用：型号串读不到时按遥控器2兜底显示，不得冒认 2 Pro；
+        # 广播名写明“remote 2 pro”的仍直接判 Pro。
+        devices = [
+            SimpleNamespace(name="MI RC", id="device-0",
+                            properties={"System.Devices.Aep.ContainerId": "11111111-1111-4111-8111-111111111111"}),
+            SimpleNamespace(name="Xiaomi Bluetooth Remote 2 Pro", id="device-1",
+                            properties={"System.Devices.Aep.ContainerId": "22222222-2222-4222-8222-222222222222"})]
+        winrt = SimpleNamespace(
+            bluetooth_le_device=SimpleNamespace(
+                get_device_selector_from_pairing_state=mock.Mock(return_value="paired"),
+                from_id_async=mock.AsyncMock(return_value=None)),
+            bluetooth_cache_mode=SimpleNamespace(CACHED="cached"),
+            gatt_communication_status=SimpleNamespace(SUCCESS=0),
+            device_information=SimpleNamespace(
+                find_all_async_aqs_filter_and_additional_properties=mock.AsyncMock(
+                    return_value=devices)))
+        with tempfile.TemporaryDirectory() as directory, \
+                mock.patch.object(ble_transport_winrt, "_import_winrt", return_value=winrt):
+            path = Path(directory) / "scan.json"
+            self.assertEqual(selection.scan_main([str(path)]), 0)
+            rows = {row["key"]: row for row in selection._read_scan_result(str(path), 0)}
+        self.assertEqual(rows[A]["profile"], selection.RC001_PROFILE)
+        self.assertFalse(rows[A]["model_confirmed"])
+        self.assertEqual(rows[B]["profile"], selection.RC003_PROFILE)
+        self.assertTrue(rows[B]["model_confirmed"])
+
+    def test_unconfirmed_scan_keeps_saved_model_but_confirmed_scan_updates_it(self):
+        saved = {"schema": 1, "active": A,
+                 "devices": [{"key": A, "profile": selection.RC003_PROFILE}]}
+        # 型号串没读到（通用名兜底）：保留已保存的型号记录，不反向改错。
+        result, _ = selection.select_paired_device(
+            saved, A, [{"key": A, "profile": selection.RC001_PROFILE, "model_confirmed": False}])
+        self.assertEqual(result["devices"], [{"key": A, "profile": selection.RC003_PROFILE}])
+        # 读到真实型号串：以扫描为准纠正旧记录。
+        result, _ = selection.select_paired_device(
+            saved, A, [{"key": A, "profile": selection.RC001_PROFILE, "model_confirmed": True}])
+        self.assertEqual(result["devices"], [{"key": A, "profile": selection.RC001_PROFILE}])
+
     def test_saved_profile_guessed_from_bluetooth_name_is_corrected_by_scan(self):
         saved = {"schema": 1, "active": A,
                  "devices": [{"key": A, "profile": selection.RC003_PROFILE}]}
         result, _ = selection.select_paired_device(
-            saved, A, [{"key": A, "profile": selection.RC001_PROFILE}])
+            saved, A, [{"key": A, "profile": selection.RC001_PROFILE, "model_confirmed": True}])
         self.assertEqual(result["devices"], [{"key": A, "profile": selection.RC001_PROFILE}])
         self.assertEqual(result["active"], A)
         self.assertFalse(selection.profiles_compatible(
@@ -526,6 +566,20 @@ class PairedChoiceTests(unittest.TestCase):
         self.assertFalse(legacy)
         self.assertEqual(len(updated["devices"]), 2)
 
+    def test_user_override_confirms_the_model_even_when_scan_could_not(self):
+        saved = {"schema": 1, "active": A,
+                 "devices": [{"key": A, "profile": selection.RC001_PROFILE}]}
+        rows = [{"key": A, "profile": selection.RC001_PROFILE, "model_confirmed": False}]
+        # 用户在弹窗里指定 2 Pro：以用户选择为准并视为已确证。
+        updated, _ = selection.select_paired_device(
+            saved, A, rows, override_profile=selection.RC003_PROFILE)
+        self.assertEqual(updated["devices"], [{"key": A, "profile": selection.RC003_PROFILE}])
+        self.assertEqual(updated["active"], A)
+        # 手动指定只对小米两款有效。
+        with self.assertRaises(selection.SelectionError):
+            selection.select_paired_device(
+                saved, A, rows, override_profile=selection.CHROMECAST_PROFILE)
+
 
 class SelectionControllerTests(unittest.TestCase):
     from tests.test_qt_settings_app import SettingsControllerTests as _Fixture
@@ -562,6 +616,49 @@ class SelectionControllerTests(unittest.TestCase):
         self.assertEqual(controller.activeRemoteKey, A)
         self.assertEqual(save.call_count, 1)
         self.assertTrue(save.call_args.kwargs["allow_legacy_binding"])
+
+    def test_unconfirmed_scan_opens_model_dialog_instead_of_switching(self):
+        controller = self.seed()
+        key = "d" * 64
+        controller._on_remote_devices_ready((
+            [{"key": key, "profile": selection.RC001_PROFILE, "model_confirmed": False}], ""))
+        requested = []
+        controller.remoteModelConfirmRequested.connect(lambda: requested.append(True))
+        with mock.patch.object(controller, "_change_active_remote") as change:
+            controller.useRemoteDevice(key)
+            change.assert_not_called()
+        self.assertTrue(requested)
+        self.assertEqual(controller.remoteModelConfirmKey, key)
+        self.assertEqual(controller.activeRemoteKey, A)
+
+    def test_user_confirmed_model_overrides_unconfirmed_scan(self):
+        controller = self.seed()
+        key = "d" * 64
+        controller._on_remote_devices_ready((
+            [{"key": key, "profile": selection.RC001_PROFILE, "model_confirmed": False}], ""))
+        with mock.patch.object(controller, "_refresh_bridge_status", return_value=False), \
+             mock.patch.object(config, "switch_remote_settings", wraps=config.switch_remote_settings):
+            controller.confirmRemoteModel(key, selection.RC003_PROFILE)
+        self.assertEqual(controller.activeRemoteKey, key)
+        self.assertEqual(selection.active_profile(controller._config), selection.RC003_PROFILE)
+        self.assertEqual(controller.remoteModelConfirmKey, "")
+
+    def test_question_button_rewrites_active_model_and_reloads_settings(self):
+        controller = self.seed()
+        with mock.patch.object(controller, "_refresh_bridge_status", return_value=False), \
+             mock.patch.object(config, "switch_remote_settings", wraps=config.switch_remote_settings) as save:
+            controller.confirmRemoteModel(A, selection.RC001_PROFILE)
+        self.assertEqual(controller.activeRemoteKey, A)
+        self.assertEqual(selection.active_profile(controller._config), selection.RC001_PROFILE)
+        self.assertEqual(save.call_count, 1)
+
+    def test_confirming_unchanged_model_only_closes_the_dialog(self):
+        controller = self.seed()
+        with mock.patch.object(controller, "_change_active_remote") as change, \
+             mock.patch.object(config, "save_config") as save:
+            controller.confirmRemoteModel(A, selection.RC003_PROFILE)
+        change.assert_not_called()
+        save.assert_not_called()
 
     def test_new_choice_registration_rolls_back_with_failed_save(self):
         controller = self.seed()

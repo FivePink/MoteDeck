@@ -458,6 +458,22 @@ class _AppWiringTestCase(unittest.TestCase):
             voice_hotkey_release_timer_factory
         )
 
+    def _use_recorded_repeat_timers(self):
+        timers = []
+
+        def timer_factory(delay, callback):
+            timer = _ManualTimer(callback)
+            timer.delay = delay
+            timers.append(timer)
+            return timer
+
+        self.app._button_gestures._timer_factory = timer_factory
+        self.app._button_gestures._hold_timer_factory = (
+            lambda _delay, callback: _ManualTimer(callback)
+        )
+        self.addCleanup(self.app._button_gestures.reset)
+        return timers
+
     def tearDown(self):
         with self.app._button_action_lock:
             self.app._button_input_release_retry_stopping = True
@@ -2237,22 +2253,6 @@ class CorruptButtonBindingFailsClosedTests(_AppWiringTestCase):
 
 
 class OrdinaryButtonGestureWiringTests(_AppWiringTestCase):
-    def _use_recorded_repeat_timers(self):
-        timers = []
-
-        def timer_factory(delay, callback):
-            timer = _ManualTimer(callback)
-            timer.delay = delay
-            timers.append(timer)
-            return timer
-
-        self.app._button_gestures._timer_factory = timer_factory
-        self.app._button_gestures._hold_timer_factory = (
-            lambda _delay, callback: _ManualTimer(callback)
-        )
-        self.addCleanup(self.app._button_gestures.reset)
-        return timers
-
     def test_direction_hold_replays_full_clicks_and_release_stops_repeat(self):
         timers = self._use_recorded_repeat_timers()
         for source in ("hid_tap",):
@@ -2310,16 +2310,16 @@ class OrdinaryButtonGestureWiringTests(_AppWiringTestCase):
             backend_for.assert_called_once_with(key_mapping.INJECT_MODE_WINUHID)
             tokens = fake_backend.key_down.call_args.args[0]
             self.assertEqual(fake_backend.key_down.call_count, 1)
-            self.assertEqual(fake_backend.key_repeat.call_count, 0)
             fake_backend.key_up.assert_not_called()
             tap.assert_not_called()
-            # Each repeat re-sends only the key-down through key_repeat, which
-            # never runs the physical-key preflight: the held key-down is this
-            # process's own injection.
+            # Each repeat re-sends only the key-down without the physical-key
+            # preflight: the held key-down is this process's own injection.
             timers[-1].fire()
-            self.assertEqual(fake_backend.key_repeat.call_count, 1)
-            self.assertEqual(fake_backend.key_repeat.call_args.args[0], tokens)
-            self.assertEqual(fake_backend.key_down.call_count, 1)
+            self.assertEqual(fake_backend.key_down.call_count, 2)
+            self.assertEqual(
+                fake_backend.key_down.call_args.kwargs["require_tracked_hold"],
+                False,
+            )
             fake_backend.key_up.assert_not_called()
             tap.assert_not_called()
             # The single matching key-up is delivered only on release.
@@ -2345,16 +2345,16 @@ class OrdinaryButtonGestureWiringTests(_AppWiringTestCase):
             backend_for.assert_called_once_with(key_mapping.INJECT_MODE_INTERCEPTION)
             tokens = fake_backend.key_down.call_args.args[0]
             self.assertEqual(fake_backend.key_down.call_count, 1)
-            self.assertEqual(fake_backend.key_repeat.call_count, 0)
             fake_backend.key_up.assert_not_called()
             tap.assert_not_called()
-            # Each repeat re-sends only the key-down through key_repeat, which
-            # never runs the physical-key preflight: the held key-down is this
-            # process's own injection.
+            # Each repeat re-sends only the key-down without the physical-key
+            # preflight: the held key-down is this process's own injection.
             timers[-1].fire()
-            self.assertEqual(fake_backend.key_repeat.call_count, 1)
-            self.assertEqual(fake_backend.key_repeat.call_args.args[0], tokens)
-            self.assertEqual(fake_backend.key_down.call_count, 1)
+            self.assertEqual(fake_backend.key_down.call_count, 2)
+            self.assertEqual(
+                fake_backend.key_down.call_args.kwargs["require_tracked_hold"],
+                False,
+            )
             fake_backend.key_up.assert_not_called()
             tap.assert_not_called()
             # The single matching key-up is delivered only on release.
@@ -5469,6 +5469,11 @@ class VoiceMappingProductBoundaryTests(_AppWiringTestCase):
         self.app._bindings["bindings"]["mic"] = key_mapping.ButtonAction(
             key_mapping.ActionKind.ARROW_UP
         ).to_dict()
+        # 按住重复的定时器由真实时间驱动（threading.Timer）：全量套件高负载
+        # 下，相邻两次事件之间一旦真实耗时超过键盘重复间隔（0.065s），重复
+        # 定时器就会自己补发一次点击，让点击计数随机多 1。换成手动触发的
+        # 录制定时器后，重复只在用例显式 fire 时发生，断言回到确定行为。
+        self._use_recorded_repeat_timers()
         clock = [100.0]
 
         with mock.patch.object(
@@ -8493,9 +8498,8 @@ class VoiceRemoteMicrophoneModeTests(_AppWiringTestCase):
         self.assertFalse(self.app._voice_shortcut.controller.active)
         self.assertFalse(self.app._voice_gesture.latched)
 
-    def test_other_key_switch_moves_the_voice_cycle_slot(self):
+    def test_mode_switch_by_button_moves_the_voice_cycle_slot(self):
         _stamp_voice_key(self.app._config, 2, hotkey="lalt")
-        self.app._config["voice_other_key_switch"] = True
 
         self.app._switch_voice_mode_by_button(
             "power", app_module.button_gesture.ButtonTrigger.LONG_PRESS
@@ -8510,20 +8514,11 @@ class VoiceRemoteMicrophoneModeTests(_AppWiringTestCase):
         )
         self.assertEqual(self.app._voice_cycle_slot, 1)
 
-    def test_other_key_switch_is_ignored_while_the_toggle_is_off(self):
-        _stamp_voice_key(self.app._config, 2, hotkey="lalt")
-
-        self.app._switch_voice_mode_by_button(
-            "power", app_module.button_gesture.ButtonTrigger.SINGLE_CLICK
-        )
-        self.assertIsNone(self.app._voice_cycle_slot)
-
-    def test_other_key_switch_runs_from_real_button_events(self):
+    def test_mode_switch_by_button_runs_from_real_button_events(self):
         # 回归：用户把「语音模式切换」映射到别的按键后，短按/长按都必须真的
         # 切槽。这条用例从 HID 边沿入口走完整链路，覆盖 _on_button_trigger
         # 里的动作分发——直调 _switch_voice_mode_by_button 的用例覆盖不到它。
         stored_config = config.load_config(self.app._config_path)
-        stored_config["voice_other_key_switch"] = True
         _stamp_voice_key(stored_config, 2, hotkey="lalt")
         config.save_config(self.app._config_path, stored_config)
 

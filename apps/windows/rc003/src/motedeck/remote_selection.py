@@ -247,25 +247,36 @@ def select_device(selection: dict, key: str) -> dict:
     return result
 
 
-def select_paired_device(selection: dict, key: str, paired: list[dict]) -> tuple[dict, bool]:
+def select_paired_device(selection: dict, key: str, paired: list[dict],
+                         *, override_profile: str = "") -> tuple[dict, bool]:
     """Prepare registration + selection without writing or activating anything.
 
     The legacy-owner decision uses all known Xiaomi identities, not just the
     single row being registered by this confirmation. Never infer ownership
     from an incomplete/failed scan (the caller must require a successful scan).
+
+    override_profile：蓝牙名与型号串都分不清时（扫描兜底）由用户在弹窗里
+    指定的型号；只允许用在小米两款的行上，用户指定即视为已确证。
     """
     result = normalize(selection)
     row = next((item for item in paired if item["key"] == key), None)
     if row is None or row.get("profile") not in KNOWN_PROFILES:
         raise SelectionError("未找到这台已配对且支持的设备，请刷新后重新选择。")
+    if override_profile:
+        if (override_profile not in XIAOMI_PROFILES
+                or row["profile"] not in XIAOMI_PROFILES):
+            raise SelectionError("这台设备不能手动指定型号。")
+        row = dict(row, profile=override_profile, model_confirmed=True)
     saved_profile = profile_for_key(result, key)
     if saved_profile and saved_profile != row["profile"]:
         if not profiles_compatible(saved_profile, row["profile"]):
             raise SelectionError("设备型号信息与已保存记录不一致，请重新检查。")
-        # 旧记录里的型号可能是按通用蓝牙名猜错的，扫描读到真实型号后以扫描为准。
-        result["devices"] = [
-            dict(item, profile=row["profile"]) if item["key"] == key else item
-            for item in result["devices"]]
+        # 旧记录里的型号可能是按通用蓝牙名猜错的，扫描读到真实型号后以扫描为准；
+        # 型号串没读到时（通用名兜底）保留已保存记录，避免把确认过的型号改错。
+        if row.get("model_confirmed", True):
+            result["devices"] = [
+                dict(item, profile=row["profile"]) if item["key"] == key else item
+                for item in result["devices"]]
     known_xiaomi = {item["key"] for item in result["devices"] + paired
                     if item.get("profile") in XIAOMI_PROFILES}
     result = select_device(add_device(result, row), key)
@@ -379,9 +390,17 @@ async def _scan_paired() -> list[dict]:
         except (SelectionError, OSError, TypeError, ValueError):
             continue
         name = getattr(info, "name", "") or ""
-        if identity.matches_rc003_name(name):
+        matches_pro = identity.matches_rc003_name(name)
+        matches_std = identity.matches_rc001_name(name)
+        confirmed = True
+        if matches_pro and matches_std:
+            # “MI RC”是两款共用的广播名，名字本身分不清型号；未读到型号串前
+            # 按遥控器2兜底，不得冒认 2 Pro。
+            profile = RC001_PROFILE
+            confirmed = False
+        elif matches_pro:
             profile = RC003_PROFILE
-        elif identity.matches_rc001_name(name):
+        elif matches_std:
             profile = RC001_PROFILE
         elif identity.matches_chromecast_name(name):
             profile = CHROMECAST_PROFILE
@@ -398,8 +417,12 @@ async def _scan_paired() -> list[dict]:
                 exact = ""
             if exact in XIAOMI_PROFILES:
                 profile = exact
+                confirmed = True
+            # 读不到型号串时沿用名字判断：广播名无歧义的（写明 2 Pro/遥控器2）
+            # 保持确证，只有共用的 "MI RC" 才算未确证（上面已置 False）。
         # Unsupported names are display-only; saved selection still contains only digests/profiles.
         row = {"key": key, "profile": profile,
+               "model_confirmed": bool(profile) and confirmed,
                "label": label(key, profile) if profile else _unsupported_label(name, key)}
         if key in rows and rows[key]["profile"] != row["profile"]:
             raise SelectionError("同一设备的类型信息存在冲突，请重新检查。")
@@ -443,8 +466,9 @@ def _read_scan_result(result_path: str, returncode: int) -> list[dict]:
         raise SelectionError("设备列表读取失败，请重试。")
     keys = set()
     for row in rows:
-        if (not isinstance(row, dict) or set(row) != {"key", "profile", "label"}
+        if (not isinstance(row, dict) or set(row) != {"key", "profile", "label", "model_confirmed"}
                 or not valid_key(row.get("key")) or row["key"] in keys
+                or not isinstance(row.get("model_confirmed"), bool)
                 or row.get("profile") not in KNOWN_PROFILES | {""}):
             raise SelectionError("设备列表读取失败，请重试。")
         keys.add(row["key"])

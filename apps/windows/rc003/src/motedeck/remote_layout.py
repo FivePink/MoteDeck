@@ -143,9 +143,12 @@ CHROMECAST_HOTSPOTS = (
     ButtonHotspot("netflix", .80022, .62474, .32, .105),
     ButtonHotspot("power", .20431, .74134, .20, .062),
     ButtonHotspot("input_source", .77141, .74134, .20, .062),
-    # Side rocker: the supplied front photo shows only its right edge.
-    ButtonHotspot("volume_up", .98, .208, .04, .035),
-    ButtonHotspot("volume_down", .98, .252, .04, .035),
+    # Side rocker: the supplied front photo shows only its right edge. Markers
+    # sit on the measured centre of each half (the notch between them is at
+    # y≈404 px, i.e. 0.280), so the two connector lines cannot collapse onto
+    # the same point.
+    ButtonHotspot("volume_up", .98, .2360, .04, .035),
+    ButtonHotspot("volume_down", .98, .3216, .04, .035),
 )
 CHROMECAST_DISPLAY_NAMES = {
     **{

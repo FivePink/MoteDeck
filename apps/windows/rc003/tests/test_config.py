@@ -155,27 +155,6 @@ class DefaultConfigPrivacyTests(unittest.TestCase):
         self.assertIs(config.voice_cycle_short_press(loaded), True)
         self.assertIs(config.voice_key_short_press_resend(loaded, 1), True)
 
-    def test_other_key_switch_is_off_by_default(self):
-        self.assertFalse(config.default_config()["voice_other_key_switch"])
-        self.assertFalse(config.voice_other_key_switch({}))
-
-    def test_other_key_switch_round_trips_and_normalizes(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "config.json"
-            stored = config.default_config()
-            stored["voice_other_key_switch"] = True
-            loaded = config.save_config_and_load(path, stored)
-        self.assertIs(loaded["voice_other_key_switch"], True)
-        self.assertIs(config.voice_other_key_switch(loaded), True)
-
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "config.json"
-            path.write_text(
-                json.dumps({"voice_other_key_switch": "yes"}), encoding="utf-8"
-            )
-            loaded = config.load_config(path)
-        self.assertIs(loaded["voice_other_key_switch"], True)
-
     def test_missing_config_file_fabricates_no_voice_shortcut(self):
         with tempfile.TemporaryDirectory() as tmp:
             loaded = config.load_config(Path(tmp) / "config.json")

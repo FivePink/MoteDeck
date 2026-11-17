@@ -6,12 +6,16 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Effects
+import QtQuick.Shapes
 import QtQuick.Dialogs
 import QtQuick.Controls.FluentWinUI3 as Fluent
 import MoteDeckSettings 1.0
 
 Item {
     id: root
+    // 窗口级事件过滤器（qt_settings_app）按这个名字定位按键页根 item，
+    // 用来在编辑面板打开期间转发鼠标位置（见 editorHoverScenePos）。
+    objectName: "buttonsPageRoot"
     property var tokens
     MappingAppPickerDialog { id: mappingAppPickerDialog; tokens: root.tokens }
     // 「启动应用」单选用这个窗口，和多应用配置那个互不影响。
@@ -45,6 +49,94 @@ Item {
     readonly property var leftButtonIds: SettingsController.isRc003Device
         ? ["power", "up", "left", "back", "home", "menu"]
         : ["up", "left", "down", "back", "home", "youtube", "power"]
+    // 实物照片上每颗按键的真实形状，坐标按照片宽高归一化，圆心就是
+    // 键帽中心。编辑时用它画亮绿描边，能严丝合缝地盖住键帽本身。
+    // RC001（小米遥控器2）和 RC003 各自实测一张表；两个的方向盘都
+    // 没有印刷箭头，四段 90° 弧画在 ok 边缘与盘缘凹槽之间的同一比例处。
+    readonly property var photoKeyShapes: SettingsController.isRc001Device ? ({
+        "power": { kind: "circle", cx: 0.4131, cy: 0.1148, w: 0.0888, h: 0.0592 },
+        "mic": { kind: "circle", cx: 0.5793, cy: 0.1148, w: 0.0889, h: 0.0593 },
+        "up": { kind: "arc", cx: 0.4965, cy: 0.2663, rx: 0.1101, ry: 0.0734,
+            start: 225, sweep: 90 },
+        "left": { kind: "arc", cx: 0.4965, cy: 0.2663, rx: 0.1101, ry: 0.0734,
+            start: 135, sweep: 90 },
+        "ok": { kind: "circle", cx: 0.4959, cy: 0.2655, w: 0.1485, h: 0.0990 },
+        "right": { kind: "arc", cx: 0.4965, cy: 0.2663, rx: 0.1101, ry: 0.0734,
+            start: -45, sweep: 90 },
+        "down": { kind: "arc", cx: 0.4965, cy: 0.2663, rx: 0.1101, ry: 0.0734,
+            start: 45, sweep: 90 },
+        "back": { kind: "circle", cx: 0.4239, cy: 0.4140, w: 0.1103, h: 0.0736 },
+        "volume_up": { kind: "circle", cx: 0.5685, cy: 0.4139,
+            w: 0.1109, h: 0.0739 },
+        "home": { kind: "circle", cx: 0.4242, cy: 0.5008, w: 0.1106, h: 0.0737 },
+        "volume_down": { kind: "circle", cx: 0.5689, cy: 0.5009,
+            w: 0.1106, h: 0.0737 },
+        "menu": { kind: "circle", cx: 0.4242, cy: 0.5876, w: 0.1102, h: 0.0735 },
+        "tv": { kind: "circle", cx: 0.5690, cy: 0.5875, w: 0.1104, h: 0.0736 }
+    }) : SettingsController.isRc003Device ? ({
+        "power": { kind: "circle", cx: 0.4042, cy: 0.1138, w: 0.0778, h: 0.0519 },
+        "mic": { kind: "circle", cx: 0.5874, cy: 0.1138, w: 0.0778, h: 0.0519 },
+        // 方向键是同一圆环上的四段弧，半径取环带中线，角度按屏幕坐标
+        // （0° 在 3 点钟、顺时针为正）。
+        "up": { kind: "arc", cx: 0.4957, cy: 0.2602, rx: 0.1117, ry: 0.0745,
+            start: 225, sweep: 90 },
+        "left": { kind: "arc", cx: 0.4957, cy: 0.2602, rx: 0.1117, ry: 0.0745,
+            start: 135, sweep: 90 },
+        "ok": { kind: "circle", cx: 0.4951, cy: 0.2597, w: 0.1540, h: 0.1027 },
+        "right": { kind: "arc", cx: 0.4957, cy: 0.2602, rx: 0.1117, ry: 0.0745,
+            start: -45, sweep: 90 },
+        "down": { kind: "arc", cx: 0.4957, cy: 0.2602, rx: 0.1117, ry: 0.0745,
+            start: 45, sweep: 90 },
+        "back": { kind: "circle", cx: 0.4218, cy: 0.4079, w: 0.1161, h: 0.0775 },
+        "volume_up": { kind: "circle", cx: 0.5686, cy: 0.4069,
+            w: 0.1139, h: 0.0750 },
+        "home": { kind: "circle", cx: 0.4218, cy: 0.4976, w: 0.1161, h: 0.0768 },
+        "volume_down": { kind: "circle", cx: 0.5686, cy: 0.4977,
+            w: 0.1139, h: 0.0741 },
+        "menu": { kind: "circle", cx: 0.4218, cy: 0.5879, w: 0.1161, h: 0.0772 },
+        "tv": { kind: "circle", cx: 0.5688, cy: 0.5877, w: 0.1161, h: 0.0772 }
+    }) : ({
+        // 谷歌遥控器（453×1443 照片实测）：前脸都是圆形键，方向键是同一个
+        // 圆环（外径 394、内径 148，环带中线半径 135）上的四段 90° 弧。
+        "up": { kind: "arc", cx: 0.4960, cy: 0.1575, rx: 0.2989, ry: 0.0938,
+            start: 225, sweep: 90 },
+        "left": { kind: "arc", cx: 0.4960, cy: 0.1575, rx: 0.2989, ry: 0.0938,
+            start: 135, sweep: 90 },
+        "right": { kind: "arc", cx: 0.4960, cy: 0.1575, rx: 0.2989, ry: 0.0938,
+            start: -45, sweep: 90 },
+        "down": { kind: "arc", cx: 0.4960, cy: 0.1575, rx: 0.2989, ry: 0.0938,
+            start: 45, sweep: 90 },
+        "ok": { kind: "circle", cx: 0.4949, cy: 0.1568, w: 0.3262, h: 0.1024 },
+        "back": { kind: "circle", cx: 0.2499, cy: 0.3582, w: 0.3122, h: 0.0980 },
+        "mic": { kind: "circle", cx: 0.7318, cy: 0.3590, w: 0.3038, h: 0.0954 },
+        "home": { kind: "circle", cx: 0.2478, cy: 0.4859, w: 0.3121, h: 0.0980 },
+        "volume_mute": { kind: "circle", cx: 0.7288, cy: 0.4866,
+            w: 0.3122, h: 0.0980 },
+        "youtube": { kind: "circle", cx: 0.2486, cy: 0.6131, w: 0.3091, h: 0.0970 },
+        "netflix": { kind: "circle", cx: 0.7253, cy: 0.6131, w: 0.3091, h: 0.0970 },
+        "power": { kind: "circle", cx: 0.2468, cy: 0.7334, w: 0.1752, h: 0.0550 },
+        "input_source": { kind: "circle", cx: 0.7277, cy: 0.7341,
+            w: 0.1751, h: 0.0550 },
+        // 侧边音量摇杆在这张正面图上只露出右缘一条窄条，按上下两半画成胶囊。
+        "volume_up": { kind: "rect", cx: 0.9790, cy: 0.2401,
+            w: 0.0287, h: 0.0797 },
+        "volume_down": { kind: "rect", cx: 0.9790, cy: 0.3174,
+            w: 0.0287, h: 0.0748 }
+    })
+    // 没有精确键形数据时退回热点框：接近正方形画圆，长条画胶囊。
+    // aspect 是照片绘制区的高宽比，用来把像素上的圆换算成按宽高归一化的值。
+    function photoKeySpec(buttonId, hx, hy, hw, hh, aspect) {
+        const exact = photoKeyShapes[buttonId]
+        if (exact)
+            return exact
+        const round = Math.abs(hw - hh) <= Math.min(hw, hh) * 0.5
+        if (round) {
+            const side = Math.min(hw, hh * (aspect || 1))
+            return { kind: "circle", cx: hx, cy: hy,
+                w: side, h: side / (aspect || 1) }
+        }
+        return { kind: "rect", cx: hx, cy: hy, w: hw, h: hh }
+    }
     // 设计稿 .board：高 448，卡片 300×56，行距 64，中间 .stage 140 宽。
     readonly property real mappingBoardHeight: 448
     readonly property real mappingCardWidth: 300
@@ -52,6 +144,101 @@ Item {
     readonly property real mappingRowPitch: 64
     readonly property real mappingPhotoColumnWidth: 140
     readonly property real mappingKeyLabelWidth: 36
+    // 选中某个按键后右侧滑出的动作面板宽度；面板打开时板上的卡片和
+    // 连线一起收起，实物图退到剩下的区域里居中，模仿 Logi Options+。
+    readonly property real mappingPanelWidth: 420
+    readonly property bool mappingPanelOpen: actionEditor.visible
+    // 布局用的开合开关：面板一发起关闭就算收起，遥控器立刻跟着卡片一起
+    // 滑回连线布局，不用停在原地等面板滑完那 300ms。点击判断仍用
+    // mappingPanelOpen（面板还挡在上面时不要响应）。
+    readonly property bool mappingPanelExpanded: actionEditor.panelShown
+    // 进入 / 退出编辑模式只跑这一条时间线：遥控器、卡片、连线和右侧面板
+    // 全按同一套节奏走，不再各自为政。
+    //   进入：卡片/连线 120ms 快速让位，遥控器与面板同时滑 300ms；
+    //   退出：遥控器与面板同时滑回 300ms，悬浮卡片自己 120ms 收起，
+    //         卡片/连线等它收完（140ms）再花 260ms 渐显，两段不重叠。
+    readonly property int editSlideDuration: 300
+    readonly property int editFadeOutDuration: 120
+    readonly property int editFadeInDelay: 140
+    readonly property int editFadeInDuration: 260
+    states: [
+        State {
+            name: "editing"
+            when: root.mappingPanelExpanded
+            PropertyChanges { target: leftSideCards; opacity: 0 }
+            PropertyChanges { target: rightSideCards; opacity: 0 }
+            PropertyChanges { target: mappingLines; opacity: 0 }
+            PropertyChanges { target: activeMappingLine; opacity: 0 }
+            PropertyChanges { target: panelShift; x: photoSidebar.panelShiftX }
+        }
+    ]
+    transitions: [
+        Transition {
+            to: "editing"
+            ParallelAnimation {
+                NumberAnimation {
+                    target: leftSideCards; property: "opacity"
+                    duration: root.editFadeOutDuration
+                    easing.type: Easing.OutQuad
+                }
+                NumberAnimation {
+                    target: rightSideCards; property: "opacity"
+                    duration: root.editFadeOutDuration
+                    easing.type: Easing.OutQuad
+                }
+                NumberAnimation {
+                    target: mappingLines; property: "opacity"
+                    duration: root.editFadeOutDuration
+                    easing.type: Easing.OutQuad
+                }
+                NumberAnimation {
+                    target: activeMappingLine; property: "opacity"
+                    duration: root.editFadeOutDuration
+                    easing.type: Easing.OutQuad
+                }
+                NumberAnimation {
+                    target: panelShift; property: "x"
+                    duration: root.editSlideDuration
+                    easing.type: Easing.OutCubic
+                }
+            }
+        },
+        Transition {
+            from: "editing"
+            ParallelAnimation {
+                NumberAnimation {
+                    target: panelShift; property: "x"
+                    duration: root.editSlideDuration
+                    easing.type: Easing.OutCubic
+                }
+                SequentialAnimation {
+                    PauseAnimation { duration: root.editFadeInDelay }
+                    ParallelAnimation {
+                        NumberAnimation {
+                            target: mappingLines; property: "opacity"
+                            duration: root.editFadeInDuration
+                            easing.type: Easing.OutCubic
+                        }
+                        NumberAnimation {
+                            target: activeMappingLine; property: "opacity"
+                            duration: root.editFadeInDuration
+                            easing.type: Easing.OutCubic
+                        }
+                        NumberAnimation {
+                            target: leftSideCards; property: "opacity"
+                            duration: root.editFadeInDuration
+                            easing.type: Easing.OutCubic
+                        }
+                        NumberAnimation {
+                            target: rightSideCards; property: "opacity"
+                            duration: root.editFadeInDuration
+                            easing.type: Easing.OutCubic
+                        }
+                    }
+                }
+            }
+        }
+    ]
     // 提示气泡与其他页面统一：同样距内容区底部 16，浮在底部那一行上。
     readonly property real messageBubbleHeight: 26
     property var backTabTarget: null
@@ -89,6 +276,16 @@ Item {
             actionEditor.close()
     }
 
+    // 换页时只把编辑面板藏起来：不改面板开合状态，遥控器位置、卡片和连线
+    // 全部保持原样，切回来原样打开，整页不会因为换页播放任何动画。
+    function hideEditorForPageSwitch() {
+        if (!actionEditor.visible)
+            return
+        panelCloseTimer.stop()
+        actionEditor.hiddenByPageSwitch = true
+        actionEditor.visible = false
+    }
+
     function settleInputUiAfterStop() {
         if (shortcutRecorder.visible && !SettingsController.hotkeyCaptureActive)
             shortcutRecorder.finishClose()
@@ -107,6 +304,55 @@ Item {
         // 页面一创建就把应用栏的列表读出来，否则冷启动后必须先打开“语音”页的
         // 配置管理弹窗才会填充，按键映射页会一直只有“全局”和“+”。
         SettingsController.refreshMappingApps()
+    }
+
+    // 编辑面板是非模态 Popup，但它一打开，Qt 的 Overlay 层就会吞掉页面
+    // 区域的 hover 事件（offscreen 探针实测：面板打开时照片热区的
+    // HoverHandler 收不到悬浮事件，挂在 Overlay 上的 MouseArea 也一样收
+    // 不到——事件被 Popup 的事件过滤器重定向后就不再向普通 item 传递）。
+    // QML 层无解，改由 qt_settings_app 的窗口级事件过滤器在面板打开期间
+    // 把鼠标位置写进 editorHoverScenePos，页面用热区矩形自己算命中；鼠标
+    // 离开窗口或面板关闭时过滤器写入负坐标/页面自行清空。面板关闭时的
+    // hover 仍走热区自己的 HoverHandler（连线模式的小圆点不受影响）。
+    property string editorHoverButtonId: ""
+    // 编辑面板打开期间由窗口事件过滤器写入的鼠标位置（窗口坐标）；x < 0
+    // 表示清空悬浮状态。
+    property point editorHoverScenePos: Qt.point(-1, -1)
+    onEditorHoverScenePosChanged: {
+        if (editorHoverScenePos.x < 0)
+            editorHoverButtonId = ""
+        else
+            editorHoverButtonId = editorHoverButtonAt(
+                editorHoverScenePos.x, editorHoverScenePos.y)
+    }
+    // 面板关闭后清掉残留的悬浮高亮（过滤器在面板关闭后不再写入）。
+    onMappingPanelOpenChanged: if (!mappingPanelOpen) editorHoverButtonId = ""
+    function editorHoverButtonAt(sceneX, sceneY) {
+        for (let i = 0; i < photoHotspotRepeater.count; ++i) {
+            const item = photoHotspotRepeater.itemAt(i)
+            if (!item)
+                continue
+            // mapFromItem(null, ...) 是 QML 里唯一的场景坐标换算入口
+            // （Item 的 mapFromScene/mapToScene 不是 QML 可调用方法）。
+            const p = item.mapFromItem(null, sceneX, sceneY)
+            if (p.x >= 0 && p.y >= 0 && p.x <= item.width
+                    && p.y <= item.height)
+                return item.buttonId
+        }
+        return ""
+    }
+
+    // 跟随鼠标的悬浮卡片只在编辑状态出现；连线状态不显示任何卡片。
+    // 卡片里一行手势的显示文字：有备注就显示备注（与按键卡片一致），
+    // 未设置的返回空串，由卡片统一显示灰色的「未设置」。
+    function photoHoverText(bindingText, noteText) {
+        const binding = (bindingText || "").trim()
+        if (binding.length === 0 || binding === qsTr("未设置"))
+            return ""
+        const note = (noteText || "").trim()
+        if (note.length > 0 && note !== qsTr("未命名"))
+            return note
+        return SettingsController.formatActionText(binding)
     }
 
     // 同一帧内的多次几何变化合并成一次重绘；连线画布尺寸固定，
@@ -143,11 +389,33 @@ Item {
     }
 
     function scheduleConnectorRepaint() {
+        // 面板展开时连线整体淡出、实物图正在滑动：这段时间不用重画，
+        // 免得动画每帧都重建 Canvas 纹理。面板一发起关闭（expanded 变
+        // false）就正常重画，遥控器滑回的最后每一帧都跟着走。
+        if (root.mappingPanelExpanded)
+            return
         Qt.callLater(root.paintConnectorsNow)
     }
 
     function isLeftButton(buttonId) {
         return leftButtonIds.indexOf(buttonId) >= 0
+    }
+
+    // 面板开着时切换了应用：用新应用的映射把同一颗按键的面板内容刷新一遍，
+    // 不用再点一次这颗按键。
+    function refreshOpenEditor() {
+        if (!actionEditor.visible || actionEditor.rowIndex < 0)
+            return
+        const buttonId = actionEditor.buttonId
+        const index = actionEditor.rowIndex
+        const card = isLeftButton(buttonId)
+            ? leftCardRepeater.itemAt(index) : rightCardRepeater.itemAt(index)
+        if (!card)
+            return
+        actionEditor.openForRow(
+            index, buttonId, shortButtonName(buttonId),
+            card.actionText, card.doubleClickText, card.longPressText,
+            card.singleNote, card.doubleNote, card.longNote)
     }
 
     function visualRow(buttonId) {
@@ -532,9 +800,9 @@ Item {
         tokens: root.tokens
         objectName: "removeMappingAppConfirmDialog"
         title: qsTr("移除应用程序？")
+        width: Math.min(430, root.width - 28)
         modal: true
         anchors.centerIn: parent
-        width: Math.min(430, root.width - 28)
         standardButtons: Dialog.Ok | Dialog.Cancel
         property string pendingProfileId: ""
         property string pendingProfileName: ""
@@ -562,9 +830,9 @@ Item {
         tokens: root.tokens
         objectName: "pluginAppLockedDialog"
         title: qsTr("无法删除")
+        width: Math.min(430, root.width - 28)
         modal: true
         anchors.centerIn: parent
-        width: Math.min(430, root.width - 28)
         standardButtons: Dialog.Ok
 
         contentItem: ColumnLayout {
@@ -1091,6 +1359,8 @@ Item {
             height: tokens.controlHeight
             leftPadding: 7
             rightPadding: 7
+            // 用不了的模式直接点不动，不弹任何解释。
+            enabled: !unavailable
             highlighted: injectCombo.highlightedIndex === index
             contentItem: Label {
                 text: injectOptionDelegate.option
@@ -1115,10 +1385,40 @@ Item {
     Dialog {
         id: actionEditor
         objectName: "actionEditorDialog"
-        modal: true
+        // 不再居中弹窗：改成贴在按键板右侧的抽屉面板，选中按键后从右边滑入，
+        // 同时板上的卡片与连线收起、实物图左移（模仿 Logi Options+）。
+        modal: false
         popupType: Popup.Item
-        anchors.centerIn: parent
-        width: Math.min(430, root.width - tokens.spacingLarge * 2)
+        // 不指定 parent：Item 型弹层默认挂在页面根 Item 上，坐标就是页面可视区的
+        // 坐标；按键板的几何也换算到同一坐标系里，否则会差出顶栏那一截。
+        readonly property real viewportWidth: parent ? parent.width : root.width
+        readonly property real viewportHeight: parent ? parent.height : root.height
+        readonly property rect boardRect: mappingList.mapToItem(
+            actionEditor.parent, 0, 0, mappingList.width, mappingList.height)
+        // 贴着按键板的高度，但不超过窗口可视高度（小窗口时页面会滚动）。
+        readonly property real panelHeight: Math.max(240, Math.min(
+            mappingList.height, viewportHeight))
+        y: Math.max(0, Math.min(boardRect.y, viewportHeight - panelHeight))
+        height: panelHeight
+        width: root.mappingPanelWidth
+        property bool panelShown: false
+        // 切到别的页面只是把面板藏起来，回到按键页时按离开前的样子恢复。
+        property bool hiddenByPageSwitch: false
+        // 弹出/收起的位置由下面的滑动控制；Fluent 样式自带的进出淡入淡出会
+        // 让面板在关闭后还残留在画面上约 167ms，切页时会闪在别的页面上。
+        enter: Transition {}
+        exit: Transition {}
+        // 贴着按键板右边缘；收起时推到窗口右侧外面。
+        x: panelShown
+            ? Math.min(boardRect.x + boardRect.width, viewportWidth) - width
+            : viewportWidth
+        Behavior on x {
+            // 和遥控器的侧移同一时长/缓动，滑入滑出是一体的。
+            NumberAnimation {
+                duration: root.editSlideDuration
+                easing.type: Easing.OutCubic
+            }
+        }
         readonly property string headerText: buttonName.length > 0
             ? qsTr("编辑：") + buttonName
             : qsTr("编辑")
@@ -1134,8 +1434,23 @@ Item {
         bottomInset: 0
         closePolicy: Popup.CloseOnEscape
 
+        // 关闭走一次滑出动画：先把面板推出右侧，等动画结束再真正 close()。
+        Timer {
+            id: panelCloseTimer
+            interval: root.editSlideDuration + 40
+            onTriggered: actionEditor.close()
+        }
+
+        function requestClose() {
+            if (!visible)
+                return
+            panelShown = false
+            panelCloseTimer.restart()
+        }
+
         background: Rectangle {
-            radius: tokens.cornerRadiusLarge
+            // 与页面卡片、其他弹窗一致的圆角（cornerRadiusCard）。
+            radius: tokens.cornerRadiusCard
             color: tokens.surface
             border.width: tokens.hairlineWidth
             border.color: tokens.border
@@ -1164,7 +1479,14 @@ Item {
                 anchors.right: parent.right
                 anchors.rightMargin: actionEditor.rightPadding - tokens.dialogCloseButtonOutset
                 y: tokens.dialogTopPadding + (tokens.dialogTitleHeight - height) / 2
-                onCloseRequested: actionEditor.close()
+                // ✕ 代替原来的「取消」：有未保存的草稿先弹二级确认，
+                // 确认后丢弃；没改动就直接关。落盘只走「完成」。
+                onCloseRequested: {
+                    if (actionEditor.draftDirty)
+                        actionEditorDiscardConfirmDialog.open()
+                    else
+                        actionEditor.requestClose()
+                }
             }
         }
 
@@ -1187,6 +1509,87 @@ Item {
         property string originalInjectMode: "sendinput"
         property bool syncing: false
         property bool validationRequested: false
+        // 会话级草稿缓冲：面板开着期间换行 / 换应用时，把当前行改过的草稿
+        // 暂存到这里（key = 草稿所属应用 "|" + 行号），「完成」时连同当前行
+        // 一起落盘，「✕ 放弃」时整个会话一起清掉——以一次编辑界面为准。
+        property var pendingEdits: ({})
+        // 当前行草稿是在哪个编辑目标下改的：换应用时控制器先改目标再刷新
+        // 面板，暂存草稿要按草稿自己的应用记，不能按切换后的目标。
+        property string draftTarget: ""
+        // 保存成功 / 确认放弃时先立起这面旗，onClosed 就不再把当前行暂存
+        // 进缓冲；换页隐藏面板这种「会话还在」的关闭才需要暂存。
+        property bool closeFinalizesSession: false
+        // 右侧分类列表里点的动作写给哪个手势（单击 / 双击 / 长按）。
+        property string activeTrigger: "single_click"
+        // 分类列表的展开状态：标题 → 是否展开；没记录的按「第一组展开」处理。
+        property var sectionOpen: ({})
+        // 沿用下拉里的分组标题把动作分节；同名分类并到一节（语音键和
+        // 「语音模式切换」都在「语音」里），没有分组标题的归到「其他动作」。
+        // 双击/长按可以选「未设置」来清掉这一条手势。
+        readonly property var actionSections: {
+            const options = SettingsController.primaryActionOptionsFor(buttonId)
+            if (activeTrigger !== "single_click")
+                options.push("未设置")
+            const sections = []
+            const byTitle = ({})
+            for (let i = 0; i < options.length; ++i) {
+                const option = String(options[i])
+                const title = SettingsController.actionOptionGroupTitle(option)
+                const key = title.length > 0 ? title : qsTr("其他动作")
+                let section = byTitle[key]
+                if (!section) {
+                    section = { "title": key, "items": [] }
+                    byTitle[key] = section
+                    sections.push(section)
+                }
+                section.items.push(option)
+            }
+            return sections
+        }
+        function isSectionOpen(title) {
+            // 默认全部收起，展开哪一组由用户自己点。
+            return sectionOpen[title] === true
+        }
+        function toggleSection(title) {
+            // 手风琴：同时只展开一个分类，展开新的自动收掉旧的。
+            const next = {}
+            if (!isSectionOpen(title))
+                next[title] = true
+            sectionOpen = next
+        }
+        function activeText() {
+            return activeTrigger === "single_click" ? primaryText
+                : activeTrigger === "double_click" ? doubleText : longText
+        }
+        function isCurrentOption(option) {
+            return SettingsController.formatActionText(activeText())
+                === SettingsController.formatActionText(option)
+        }
+        function applyOptionToActiveTrigger(option) {
+            if (rowIndex < 0)
+                return
+            // 「启动应用」要先挑一个程序，挑完再回填。
+            if (SettingsController.isLaunchApplicationText(
+                    SettingsController.formatActionText(option))) {
+                root.openApplicationPicker(rowIndex, activeTrigger, option)
+                return
+            }
+            syncing = true
+            if (activeTrigger === "single_click")
+                primaryText = option
+            else if (activeTrigger === "double_click")
+                doubleText = option
+            else
+                longText = option
+            syncing = false
+        }
+        readonly property string activeTriggerLabel:
+            activeTrigger === "single_click" ? qsTr("单击")
+            : activeTrigger === "double_click" ? qsTr("双击") : qsTr("长按")
+        readonly property bool activeHotkeyLocked:
+            activeTrigger === "single_click" ? primaryHotkeyLocked
+            : activeTrigger === "double_click" ? doubleHotkeyLocked
+            : longHotkeyLocked
         onPrimaryTextChanged: {
             validationRequested = false
             if (!syncing)
@@ -1225,13 +1628,6 @@ Item {
         readonly property bool longHotkeyLocked:
             primaryIsVoice
             || SettingsController.isVoiceModeCycleText(normalizedLongText)
-        // 「启动应用」的三行各自独立：哪一行是这个动作，哪一行才显示「选择应用」。
-        readonly property bool primaryIsLaunchApplication:
-            SettingsController.isLaunchApplicationText(normalizedPrimaryText)
-        readonly property bool doubleIsLaunchApplication:
-            SettingsController.isLaunchApplicationText(normalizedDoubleText)
-        readonly property bool longIsLaunchApplication:
-            SettingsController.isLaunchApplicationText(normalizedLongText)
         readonly property string primaryValidationError: rowIndex >= 0
             ? SettingsController.buttonActionValidationMessage(
                 buttonId, "single_click", primaryText, injectMode
@@ -1276,23 +1672,14 @@ Item {
             return false
         }
         function syncInjectModeToActions() {
-            if (isModeBlocked(injectMode)) {
+            if (isModeBlocked(injectMode))
                 injectMode = "sendinput"
-                injectModeCombo.syncFromMode("sendinput")
-            }
-        }
-        readonly property string injectModeHintText: {
-            if (injectMode === "winuhid" && !SettingsController.winuhidAvailable)
-                return SettingsController.winuhidUnavailableHint
-            if (injectMode === "interception" && !SettingsController.interceptionAvailable)
-                return SettingsController.interceptionUnavailableHint
-            return ""
         }
         readonly property string validationError:
             primaryValidationError.length > 0 ? primaryValidationError
             : doubleValidationError.length > 0 ? doubleValidationError
             : longValidationError
-        readonly property bool draftDirty:
+        readonly property bool rowDirty:
             primaryText !== originalPrimaryText
             || doubleText !== originalDoubleText
             || longText !== originalLongText
@@ -1300,15 +1687,83 @@ Item {
             || doubleNote !== originalDoubleNote
             || longNote !== originalLongNote
             || injectMode !== originalInjectMode
+        // 会话里只要还有没落盘的改动（缓冲里的其他行 + 当前行），就都算
+        // 有草稿；✕ 和离开提示都按整个会话判断。
+        readonly property bool draftDirty:
+            Object.keys(pendingEdits).length > 0 || rowDirty
+
+        function setPendingEdit(key, entry) {
+            // var 属性要整包重新赋值才会让 draftDirty 重新求值。
+            const next = {}
+            for (const k in pendingEdits)
+                next[k] = pendingEdits[k]
+            if (entry)
+                next[key] = entry
+            pendingEdits = next
+        }
+
+        function stashRowDraft() {
+            if (rowIndex < 0)
+                return
+            const key = draftTarget + "|" + rowIndex
+            if (rowDirty) {
+                setPendingEdit(key, {
+                    identity: draftTarget,
+                    rowIndex: rowIndex,
+                    buttonId: buttonId,
+                    primary: primaryText,
+                    double: doubleText,
+                    long: longText,
+                    primaryNote: primaryNote,
+                    doubleNote: doubleNote,
+                    longNote: longNote,
+                    injectMode: injectMode
+                })
+            } else {
+                setPendingEdit(key, null)
+            }
+        }
+
+        // 会话里还没落盘的修改统计：改了几处、几颗按键、几个应用，
+        // 给「放弃修改」弹窗做汇总提示。当前行改了但还没进缓冲的也算一处。
+        function pendingEditSummary() {
+            let rows = 0
+            const buttons = ({})
+            const apps = ({})
+            for (const k in pendingEdits) {
+                rows += 1
+                buttons[pendingEdits[k].buttonId] = true
+                apps[pendingEdits[k].identity] = true
+            }
+            if (rowDirty && rowIndex >= 0 && !pendingEdits[draftTarget + "|" + rowIndex]) {
+                rows += 1
+                buttons[buttonId] = true
+                apps[draftTarget] = true
+            }
+            return {
+                rows: rows,
+                buttons: Object.keys(buttons).length,
+                apps: Object.keys(apps).length
+            }
+        }
 
         function openForRow(rowIndexValue, buttonIdValue, buttonNameValue,
                             primaryValue, doubleValue, longValue,
                             primaryNoteValue, doubleNoteValue, longNoteValue) {
             syncing = true
             validationRequested = false
+            // 面板开着时换行 / 换应用：先把当前行的草稿按它所属的应用
+            // 暂存进会话缓冲，再载入新行，旧行的改动不丢。
+            if (visible && rowIndex >= 0)
+                stashRowDraft()
+            // 每次点开面板都回到「单击」手势；同一次编辑里切换按键 /
+            // 应用时保持当前所选不变。
+            if (!visible)
+                activeTrigger = "single_click"
             rowIndex = rowIndexValue
             buttonId = buttonIdValue
             buttonName = buttonNameValue
+            draftTarget = SettingsController.mappingEditTarget
             primaryText = primaryValue
             doubleText = doubleValue
             longText = longValue
@@ -1323,52 +1778,144 @@ Item {
             originalDoubleNote = doubleNoteValue
             originalLongNote = longNoteValue
             originalInjectMode = injectMode
-            primaryCombo.setEditorValue(primaryValue)
-            doubleCombo.setEditorValue(doubleValue)
-            longCombo.setEditorValue(longValue)
-            injectModeCombo.syncFromMode(injectMode)
+            // 这颗按键在本次编辑里改过还没落盘：接着用缓冲里的草稿。
+            const pending = pendingEdits[draftTarget + "|" + rowIndexValue]
+            if (pending) {
+                primaryText = pending.primary
+                doubleText = pending.double
+                longText = pending.long
+                primaryNote = pending.primaryNote
+                doubleNote = pending.doubleNote
+                longNote = pending.longNote
+                injectMode = pending.injectMode
+            }
             syncInjectModeToActions()
-            primaryNoteField.text = primaryNoteValue
-            doubleNoteField.text = doubleNoteValue
-            longNoteField.text = longNoteValue
+            // 下拉框的选中项是用户交互状态，不会跟着 injectMode 绑定走：
+            // 每次载入行都按当前值同步一次，避免残留上一个按键的选择。
+            injectModeCombo.syncFromMode(injectMode)
             syncing = false
+            panelCloseTimer.stop()
+            // 面板已经开着（用户在实物图上点了另一个按键）：只换内容，
+            // 不再滑进滑出一次。
+            if (visible) {
+                panelShown = true
+                return
+            }
+            panelShown = false
             open()
-            primaryCombo.forceActiveFocus()
+            // 先以收起的姿态显示，再切到展开位置，滑入动画才会真的跑起来。
+            Qt.callLater(function() {
+                if (actionEditor.visible)
+                    actionEditor.panelShown = true
+            })
         }
 
         function applyCapturedShortcut(targetRow, trigger, chord) {
             if (!visible || targetRow !== rowIndex)
                 return
             syncing = true
-            if (trigger === "single_click") {
+            if (trigger === "single_click")
                 primaryText = chord
-                primaryCombo.setEditorValue(chord)
-            } else if (trigger === "double_click") {
+            else if (trigger === "double_click")
                 doubleText = chord
-                doubleCombo.setEditorValue(chord)
-            } else if (trigger === "long_press") {
+            else if (trigger === "long_press")
                 longText = chord
-                longCombo.setEditorValue(chord)
-            }
             syncing = false
         }
 
-        // 「启动应用」选中程序后只回填对应的那一行。
+        // 「启动应用」选中程序后只回填当前手势，落盘等「完成」。
         function applyPickedApplication(targetRow, trigger, process) {
             if (!visible || targetRow !== rowIndex)
                 return
             const text = SettingsController.applicationLaunchText(process)
             syncing = true
-            if (trigger === "single_click") {
+            if (trigger === "single_click")
                 primaryText = text
-                primaryCombo.setEditorValue(text)
-            } else if (trigger === "double_click") {
+            else if (trigger === "double_click")
                 doubleText = text
-                doubleCombo.setEditorValue(text)
-            } else if (trigger === "long_press") {
+            else if (trigger === "long_press")
                 longText = text
-                longCombo.setEditorValue(text)
+            syncing = false
+        }
+
+        // 缓冲行的有效注入方式：这行动作用不了驱动级就退回 SendInput，
+        // 和当前行的兜底一致。返回 { mode, message }，message 非空表示退回
+        // SendInput 之后仍然校验不过，得拦下来让用户当场改。
+        function bufferedModeAndError(entry) {
+            const texts = [
+                ["single_click", entry.primary],
+                ["double_click", entry.double],
+                ["long_press", entry.long]
+            ]
+            const modes = [entry.injectMode]
+            if (entry.injectMode !== "sendinput")
+                modes.push("sendinput")
+            for (let m = 0; m < modes.length; ++m) {
+                let message = ""
+                for (let i = 0; i < texts.length && message.length === 0; ++i) {
+                    message = SettingsController.buttonActionValidationMessage(
+                        entry.buttonId, texts[i][0], texts[i][1], modes[m])
+                }
+                if (message.length === 0)
+                    return { mode: modes[m], message: "" }
+                if (modes[m] === "sendinput")
+                    return { mode: modes[m], message: message }
             }
+            return { mode: entry.injectMode, message: "" }
+        }
+
+        // 校验不过的缓冲行：把面板切到那一行，错误提示对着它显示，
+        // 用户当场改完再点「完成」。
+        function showBufferedRow(entry) {
+            syncing = true
+            validationRequested = true
+            rowIndex = entry.rowIndex
+            buttonId = entry.buttonId
+            draftTarget = entry.identity
+            primaryText = entry.primary
+            doubleText = entry.double
+            longText = entry.long
+            primaryNote = entry.primaryNote
+            doubleNote = entry.doubleNote
+            longNote = entry.longNote
+            injectMode = entry.injectMode
+            // original 按模型里的原值算：当前目标的行能从卡片上读回来；
+            // 其他应用的行读不到模型值，就用缓冲值凑合（缓冲项还在，
+            // 会话照样算有草稿）。
+            if (entry.identity === SettingsController.mappingEditTarget) {
+                const isLeft = SettingsController.isLeftButton(entry.buttonId)
+                const card = isLeft
+                    ? leftCardRepeater.itemAt(entry.rowIndex)
+                    : rightCardRepeater.itemAt(entry.rowIndex)
+                if (card) {
+                    originalPrimaryText = card.actionText
+                    originalDoubleText = card.doubleClickText
+                    originalLongText = card.longPressText
+                    originalPrimaryNote = card.singleNoteText
+                    originalDoubleNote = card.doubleNoteText
+                    originalLongNote = card.longNoteText
+                } else {
+                    originalPrimaryText = entry.primary
+                    originalDoubleText = entry.double
+                    originalLongText = entry.long
+                    originalPrimaryNote = entry.primaryNote
+                    originalDoubleNote = entry.doubleNote
+                    originalLongNote = entry.longNote
+                }
+                originalInjectMode =
+                    SettingsController.buttonInjectMode(entry.buttonId)
+            } else {
+                originalPrimaryText = entry.primary
+                originalDoubleText = entry.double
+                originalLongText = entry.long
+                originalPrimaryNote = entry.primaryNote
+                originalDoubleNote = entry.doubleNote
+                originalLongNote = entry.longNote
+                originalInjectMode = entry.injectMode
+            }
+            syncInjectModeToActions()
+            // 同 openForRow：载入缓冲行也要把下拉框的选中项同步到当前值。
+            injectModeCombo.syncFromMode(injectMode)
             syncing = false
         }
 
@@ -1376,12 +1923,88 @@ Item {
             validationRequested = true
             // 兜底：动作用不了驱动级时，保存这一步直接按 SendInput 存，
             // 不把「请改用 SendInput」当成错误拦下来。
-            if (isModeBlocked(injectMode)) {
+            if (isModeBlocked(injectMode))
                 injectMode = "sendinput"
-                injectModeCombo.syncFromMode("sendinput")
+            // 面板上正显示的这行可能就是某条缓冲草稿（校验失败切过来的）：
+            // 先把它暂存回去，保证落盘用的是最新改动。
+            stashRowDraft()
+            // 缓冲里其他行逐条校验；哪条不过就把面板切到那行，等用户改完。
+            const keys = Object.keys(pendingEdits)
+            const editTarget = SettingsController.mappingEditTarget
+            let hasOther = false
+            for (let i = 0; i < keys.length; ++i) {
+                const key = keys[i]
+                const entry = pendingEdits[key]
+                const checked = bufferedModeAndError(entry)
+                if (checked.message.length > 0) {
+                    showBufferedRow(entry)
+                    return false
+                }
+                if (entry.injectMode !== checked.mode) {
+                    const fixed = {}
+                    for (const k in entry)
+                        fixed[k] = entry[k]
+                    fixed.injectMode = checked.mode
+                    setPendingEdit(key, fixed)
+                }
+                if (entry.identity !== editTarget)
+                    hasOther = true
             }
             if (rowIndex < 0 || validationError.length > 0)
                 return false
+            // 其他应用的草稿先落盘：这一步控制器会把模型临时换载到那些
+            // 应用再换回来，必须发生在写当前应用之前，否则刚写的行会被冲掉。
+            if (hasOther) {
+                const groups = []
+                const byTarget = ({})
+                for (let i = 0; i < keys.length; ++i) {
+                    const entry = pendingEdits[keys[i]]
+                    if (entry.identity === editTarget)
+                        continue
+                    let group = byTarget[entry.identity]
+                    if (!group) {
+                        group = { identity: entry.identity, rows: [] }
+                        byTarget[entry.identity] = group
+                        groups.push(group)
+                    }
+                    group.rows.push({
+                        buttonId: entry.buttonId,
+                        primary: entry.primary,
+                        double: entry.double,
+                        long: entry.long,
+                        primaryNote: entry.primaryNote,
+                        doubleNote: entry.doubleNote,
+                        longNote: entry.longNote,
+                        injectMode: entry.injectMode
+                    })
+                }
+                const result = SettingsController.flushMappingDraftEdits(groups)
+                if (!result.ok)
+                    return false
+            }
+            // 当前应用的缓冲行直接写模型（模型此刻就是当前应用的布局）。
+            for (let i = 0; i < keys.length; ++i) {
+                const entry = pendingEdits[keys[i]]
+                if (entry.identity !== editTarget)
+                    continue
+                ButtonMappingModel.setActionTextAt(entry.rowIndex, entry.primary)
+                ButtonMappingModel.setSecondaryActionTextAt(
+                    entry.rowIndex, "double_click", entry.double
+                )
+                ButtonMappingModel.setSecondaryActionTextAt(
+                    entry.rowIndex, "long_press", entry.long
+                )
+                ButtonMappingModel.setDisplayNoteAt(
+                    entry.rowIndex, "single_click", entry.primaryNote
+                )
+                ButtonMappingModel.setDisplayNoteAt(
+                    entry.rowIndex, "double_click", entry.doubleNote
+                )
+                ButtonMappingModel.setDisplayNoteAt(
+                    entry.rowIndex, "long_press", entry.longNote
+                )
+                SettingsController.setButtonInjectMode(entry.buttonId, entry.injectMode)
+            }
             ButtonMappingModel.setActionTextAt(rowIndex, primaryText)
             ButtonMappingModel.setSecondaryActionTextAt(
                 rowIndex, "double_click", doubleText
@@ -1399,361 +2022,261 @@ Item {
                 rowIndex, "long_press", longNote
             )
             SettingsController.setButtonInjectMode(buttonId, injectMode)
-            close()
+            // 全部落盘：清掉会话缓冲，关闭面板时不再暂存当前行。
+            pendingEdits = ({})
+            closeFinalizesSession = true
+            requestClose()
             return true
         }
 
         onClosed: {
+            panelCloseTimer.stop()
+            // 换页隐藏时页面布局保持原样：遥控器不归位、卡片不淡入，
+            // 切回来时原样打开，整页始终不播放过渡动画。
+            if (!hiddenByPageSwitch)
+                panelShown = false
+            // 换页隐藏 / Esc 这类「会话还在」的关闭：当前行还有草稿就先
+            // 暂存进缓冲，回到按键页或再点开面板时接着改。保存成功和
+            // 确认放弃都立起了 closeFinalizesSession，不走这条。
+            if (!closeFinalizesSession && rowIndex >= 0)
+                stashRowDraft()
+            closeFinalizesSession = false
             syncing = true
             rowIndex = -1
         }
 
+        // 手势卡片固定在面板顶部不滚动，只有下面的分类列表滚动。
         contentItem: ColumnLayout {
             spacing: 9
 
-            GridLayout {
+            // 手势选择：直接复用按键卡片，点哪个手势格，下面分类里的动作
+            // 就写给哪个手势；选中的格子带强调色描边。
+            MappingCard {
+                objectName: "actionEditorGestureCard"
                 Layout.fillWidth: true
-                columns: 3
-                columnSpacing: tokens.spacingMedium
-                rowSpacing: tokens.spacingSmall
+                tokens: root.tokens
+                // 面板里的卡片和板上那颗重名会互相覆盖，加前缀区分。
+                cardId: "editor_" + actionEditor.buttonId
+                buttonName: actionEditor.buttonName
+                singleText: actionEditor.primaryText
+                doubleText: actionEditor.doubleText
+                longText: actionEditor.longText
+                singleNoteText: actionEditor.primaryNote
+                doubleNoteText: actionEditor.doubleNote
+                longNoteText: actionEditor.longNote
+                voiceAction: SettingsController.isVoiceActionText(
+                    actionEditor.primaryText.trim())
+                selectableGestures: true
+                activeGesture: actionEditor.activeTrigger
+                onGesturePicked: function(gesture) {
+                    actionEditor.activeTrigger = gesture
+                }
+            }
 
-                Item {
-                    Layout.preferredWidth: 34
-                    Layout.minimumWidth: 34
-                    Layout.maximumWidth: 34
-                }
-                UiLabel {
-                    tokens: root.tokens
-                    kind: noteKind
-                    text: qsTr("按键录入")
-                }
-                UiLabel {
-                    tokens: root.tokens
-                    kind: noteKind
-                    Layout.preferredWidth: 126
-                    Layout.minimumWidth: 126
-                    Layout.maximumWidth: 126
-                    text: qsTr("备注名称")
-                }
+            // 自定义快捷键仍然从列表里进：录到的组合写给当前选中的手势。
+            // 右边「备注」给这个手势起名，卡片上优先显示备注名。
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: root.tokens.spacingSmall
 
-                UiLabel {
-                    id: primaryGestureTitle
-                    objectName: "actionEditorPrimaryTitle"
-                    tokens: root.tokens
-                    kind: bodyKind
-                    text: qsTr("单击")
-                    font.pixelSize: tokens.fontSizeControl
-                    font.weight: Font.Medium
-                    Layout.fillHeight: true
-                    verticalAlignment: Text.AlignVCenter
-                    HoverHandler { id: primaryGestureTitleHover }
-                    CompactToolTip {
-                        objectName: "actionEditorPrimaryHelp"
-                        tokens: root.tokens
-                        active: primaryGestureTitleHover.hovered
-                        text: actionEditor.buttonId === "mic"
-                            ? qsTr("按键可选语音一/二/三（按住说话）、普通动作、快捷键或 Quicker URI；滚轮点按一格，按住连滚并提速；启动应用需已安装")
-                            : qsTr("按键可选语音一/二/三、普通动作、快捷键或 Quicker URI；滚轮点按一格，按住连滚并提速；启动应用需已安装")
-                    }
-                }
-                RowLayout {
+                AbstractButton {
+                    objectName: "actionEditorRecordButton"
                     Layout.fillWidth: true
-                    spacing: tokens.spacingSmall
+                    Layout.preferredHeight: 28
+                    hoverEnabled: true
+                    enabled: !actionEditor.activeHotkeyLocked
+                    Accessible.name: qsTr("录制")
+                        + actionEditor.activeTriggerLabel + qsTr("快捷键")
+                    onClicked: root.openShortcutRecorder(
+                        actionEditor.buttonId, actionEditor.rowIndex,
+                        actionEditor.activeTrigger)
 
-                    EditorActionCombo {
-                    id: primaryCombo
-                    objectName: "actionEditorPrimaryCombo"
+                    contentItem: UiLabel {
                         tokens: root.tokens
-                    Layout.fillWidth: true
-                    model: {
-                        // 依赖“使用其他按键切换模式”，开关变化后重新取列表
-                        SettingsController.voiceOtherKeySwitch
-                        // 语音键被停用后也要马上从列表里消失
-                        SettingsController.voiceKeyConfigs
-                        // 连上 OpenMexia 后设备动作要马上出现
-                        SettingsController.openMexiaDeviceCount
-                        return SettingsController.primaryActionOptionsFor(
-                            actionEditor.buttonId
-                        )
+                        kind: bodyKind
+                        leftPadding: 0
+                        rightPadding: 6
+                        elide: Text.ElideRight
+                        verticalAlignment: Text.AlignVCenter
+                        text: qsTr("录制") + actionEditor.activeTriggerLabel
+                            + qsTr("快捷键…")
+                        color: actionEditor.activeHotkeyLocked
+                            ? root.tokens.textTertiary : root.tokens.textPrimary
                     }
-                    Accessible.name: actionEditor.buttonName + qsTr("单击动作")
-                    onEditTextChanged: {
-                            if (!actionEditor.syncing)
-                            actionEditor.primaryText = editText
+                    background: Rectangle {
+                        radius: 6
+                        color: parent.hovered && parent.enabled
+                            ? root.tokens.buttonHover : "transparent"
                     }
-                    onActivated: {
-                        const selectedText = SettingsController.formatActionText(currentText)
-                        actionEditor.syncing = true
-                        editText = selectedText
-                        actionEditor.primaryText = selectedText
-                        actionEditor.syncing = false
-                    }
-                }
-                    CompactButton {
-                    objectName: "actionEditorPrimaryRecordButton"
-                        tokens: root.tokens
-                        compactMinimumWidth: tokens.buttonWidth2Chars
-                    enabled: actionEditor.primaryIsLaunchApplication
-                        ? true : !actionEditor.primaryHotkeyLocked
-                    text: actionEditor.primaryIsLaunchApplication
-                        ? qsTr("选择") : qsTr("录入")
-                    onClicked: {
-                        if (actionEditor.primaryIsLaunchApplication) {
-                            root.openApplicationPicker(
-                                actionEditor.rowIndex, "single_click",
-                                actionEditor.primaryText)
-                        } else {
-                            root.openShortcutRecorder(
-                                actionEditor.buttonId, actionEditor.rowIndex,
-                                "single_click")
-                        }
-                    }
-                    Accessible.name: qsTr("录制单击快捷键")
-                }
-                }
-                CompactTextField {
-                    id: primaryNoteField
-                    objectName: "actionEditorPrimaryNoteField"
-                    tokens: root.tokens
-                    Layout.preferredWidth: 126
-                    Layout.minimumWidth: 126
-                    Layout.maximumWidth: 126
-                    placeholderText: qsTr("如：复制")
-                    onTextChanged: {
-                        if (!actionEditor.syncing)
-                            actionEditor.primaryNote = text
-                    }
-                    Accessible.name: qsTr("单击备注名称")
                 }
 
-                UiLabel {
-                    id: doubleGestureTitle
-                    objectName: "actionEditorDoubleTitle"
-                    tokens: root.tokens
-                    kind: bodyKind
-                    text: qsTr("双击")
-                    font.pixelSize: tokens.fontSizeControl
-                    font.weight: Font.Medium
-                    Layout.fillHeight: true
-                    verticalAlignment: Text.AlignVCenter
-                    HoverHandler { id: doubleGestureTitleHover }
-                    CompactToolTip {
-                        tokens: root.tokens
-                        active: doubleGestureTitleHover.hovered
-                        text: qsTr("会等待约 0.3 秒区分单击和双击；设置双击或长按后，此键不再支持按住连发")
-                    }
-                }
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: tokens.spacingSmall
+                AbstractButton {
+                    objectName: "actionEditorNoteButton"
+                    Layout.preferredHeight: 28
+                    Layout.alignment: Qt.AlignVCenter
+                    hoverEnabled: true
+                    Accessible.name: qsTr("备注") + actionEditor.activeTriggerLabel
+                        + qsTr("快捷键")
+                    onClicked: actionEditorNoteDialog.openForActiveTrigger()
 
-                    EditorActionCombo {
-                    id: doubleCombo
-                    objectName: "actionEditorDoubleCombo"
+                    contentItem: UiLabel {
                         tokens: root.tokens
-                    Layout.fillWidth: true
-                    enabled: !actionEditor.primaryIsVoice
-                    model: {
-                        // 依赖“使用其他按键切换模式”，开关变化后重新取列表
-                        SettingsController.voiceOtherKeySwitch
-                        // 连上 OpenMexia 后设备动作要马上出现
-                        SettingsController.openMexiaDeviceCount
-                        return SettingsController.secondaryActionOptionsFor(
-                            actionEditor.buttonId
-                        )
+                        kind: bodyKind
+                        leftPadding: 8
+                        rightPadding: 8
+                        verticalAlignment: Text.AlignVCenter
+                        text: qsTr("备注")
+                        color: root.tokens.textPrimary
                     }
-                    Accessible.name: actionEditor.buttonName + qsTr("双击动作")
-                    onEditTextChanged: {
-                            if (!actionEditor.syncing)
-                            actionEditor.doubleText = editText
-                    }
-                    onActivated: {
-                        const selectedText = SettingsController.formatActionText(currentText)
-                        actionEditor.syncing = true
-                        editText = selectedText
-                        actionEditor.doubleText = selectedText
-                        actionEditor.syncing = false
+                    background: Rectangle {
+                        radius: 6
+                        color: parent.hovered
+                            ? root.tokens.buttonHover : "transparent"
                     }
                 }
-                    CompactButton {
-                    objectName: "actionEditorDoubleRecordButton"
-                        tokens: root.tokens
-                        compactMinimumWidth: tokens.buttonWidth2Chars
-                    enabled: actionEditor.doubleIsLaunchApplication
-                        ? true : !actionEditor.doubleHotkeyLocked
-                    text: actionEditor.doubleIsLaunchApplication
-                        ? qsTr("选择") : qsTr("录入")
-                    onClicked: {
-                        if (actionEditor.doubleIsLaunchApplication) {
-                            root.openApplicationPicker(
-                                actionEditor.rowIndex, "double_click",
-                                actionEditor.doubleText)
-                        } else {
-                            root.openShortcutRecorder(
-                                actionEditor.buttonId, actionEditor.rowIndex,
-                                "double_click")
-                        }
-                    }
-                    Accessible.name: qsTr("录制双击快捷键")
-                }
-                }
-                CompactTextField {
-                    id: doubleNoteField
-                    objectName: "actionEditorDoubleNoteField"
-                    tokens: root.tokens
-                    Layout.preferredWidth: 126
-                    Layout.minimumWidth: 126
-                    Layout.maximumWidth: 126
-                    enabled: !actionEditor.primaryIsVoice
-                    placeholderText: qsTr("如：复制")
-                    onTextChanged: {
-                        if (!actionEditor.syncing)
-                            actionEditor.doubleNote = text
-                    }
-                    Accessible.name: qsTr("双击备注名称")
-                }
+            }
 
-                UiLabel {
-                    id: longGestureTitle
-                    objectName: "actionEditorLongTitle"
-                    tokens: root.tokens
-                    kind: bodyKind
-                    text: qsTr("长按")
-                    font.pixelSize: tokens.fontSizeControl
-                    font.weight: Font.Medium
-                    Layout.fillHeight: true
-                    verticalAlignment: Text.AlignVCenter
-                    HoverHandler { id: longGestureTitleHover }
-                    CompactToolTip {
-                        tokens: root.tokens
-                        active: longGestureTitleHover.hovered
-                        text: qsTr("按住约 0.55 秒触发；鼠标长按保持到松手，其它动作触发一次；设置后不再支持按住连发")
-                    }
-                }
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: tokens.spacingSmall
+            ScrollView {
+                id: actionEditorScroll
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                clip: true
+                contentWidth: availableWidth
+                ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
 
-                    EditorActionCombo {
-                    id: longCombo
-                    objectName: "actionEditorLongCombo"
-                        tokens: root.tokens
-                    Layout.fillWidth: true
-                    enabled: !actionEditor.primaryIsVoice
-                    model: {
-                        // 依赖“使用其他按键切换模式”，开关变化后重新取列表
-                        SettingsController.voiceOtherKeySwitch
-                        return SettingsController.longPressActionOptionsFor(
-                            actionEditor.buttonId
-                        )
-                    }
-                    Accessible.name: actionEditor.buttonName + qsTr("长按动作")
-                    onEditTextChanged: {
-                            if (!actionEditor.syncing)
-                            actionEditor.longText = editText
-                    }
-                    onActivated: {
-                        const selectedText = SettingsController.formatActionText(currentText)
-                        actionEditor.syncing = true
-                        editText = selectedText
-                        actionEditor.longText = selectedText
-                        actionEditor.syncing = false
-                    }
-                }
-                    CompactButton {
-                    objectName: "actionEditorLongRecordButton"
-                        tokens: root.tokens
-                        compactMinimumWidth: tokens.buttonWidth2Chars
-                    enabled: actionEditor.longIsLaunchApplication
-                        ? true : !actionEditor.longHotkeyLocked
-                    text: actionEditor.longIsLaunchApplication
-                        ? qsTr("选择") : qsTr("录入")
-                    onClicked: {
-                        if (actionEditor.longIsLaunchApplication) {
-                            root.openApplicationPicker(
-                                actionEditor.rowIndex, "long_press",
-                                actionEditor.longText)
-                        } else {
-                            root.openShortcutRecorder(
-                                actionEditor.buttonId, actionEditor.rowIndex,
-                                "long_press")
-                        }
-                    }
-                    Accessible.name: qsTr("录制长按快捷键")
-                }
-                }
-                CompactTextField {
-                    id: longNoteField
-                    objectName: "actionEditorLongNoteField"
-                    tokens: root.tokens
-                    Layout.preferredWidth: 126
-                    Layout.minimumWidth: 126
-                    Layout.maximumWidth: 126
-                    enabled: !actionEditor.primaryIsVoice
-                    placeholderText: qsTr("如：复制")
-                    onTextChanged: {
-                        if (!actionEditor.syncing)
-                            actionEditor.longNote = text
-                    }
-                    Accessible.name: qsTr("长按备注名称")
-                }
+            // 分类动作列表：沿用下拉里的分组（推荐 / AI 动作 / 其他动作…），
+            // 每组单独展开；点一项立刻写给上面选中的手势。
+            ColumnLayout {
+                objectName: "actionEditorActionSections"
+                width: actionEditorScroll.availableWidth
+                spacing: 2
 
-                UiLabel {
-                    id: injectModeTitle
-                    objectName: "actionEditorInjectModeTitle"
-                    tokens: root.tokens
-                    kind: bodyKind
-                    text: qsTr("注入方式")
-                    font.pixelSize: tokens.fontSizeControl
-                    font.weight: Font.Medium
-                    Layout.fillHeight: true
-                    verticalAlignment: Text.AlignVCenter
-                    HoverHandler { id: injectModeTitleHover }
-                    CompactToolTip {
-                        tokens: root.tokens
-                        active: injectModeTitleHover.hovered
-                        text: qsTr("该按键所有动作使用的注入后端；WinUHid 需要安装虚拟键盘驱动，未安装时不可用。元素导航、打开应用等非普通按键动作只支持 SendInput")
-                    }
-                }
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: tokens.spacingSmall
+                Repeater {
+                    model: actionEditor.actionSections
 
-                    InjectModeCombo {
-                        id: injectModeCombo
-                        objectName: "actionEditorInjectModeCombo"
-                        tokens: root.tokens
+                    delegate: ColumnLayout {
+                        id: actionSection
+                        required property var modelData
+                        readonly property string sectionTitle: String(modelData.title)
                         Layout.fillWidth: true
-                        model: SettingsController.injectModeOptions
-                        Accessible.name: actionEditor.buttonName + qsTr("注入方式")
-                        onActivated: {
-                            const option = model[index]
-                            const value = option ? String(option.value) : ""
-                            // 驱动级用不了的动作：这一项直接不可选，选了也停回原来的值，
-                            // 不再弹任何解释。
-                            if (!option || option.available === false
-                                    || actionEditor.isModeBlocked(value)) {
-                                injectModeCombo.syncFromMode(actionEditor.injectMode)
-                                return
+                        spacing: 2
+
+                        AbstractButton {
+                            id: sectionHeaderButton
+                            objectName: "actionEditorSection_" + actionSection.sectionTitle
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 28
+                            hoverEnabled: true
+                            Accessible.name: actionSection.sectionTitle
+                            onClicked: actionEditor.toggleSection(
+                                actionSection.sectionTitle)
+
+                            contentItem: RowLayout {
+                                spacing: 6
+
+                                UiLabel {
+                                    tokens: root.tokens
+                                    kind: bodyKind
+                                    Layout.fillWidth: true
+                                    text: actionSection.sectionTitle
+                                    font.weight: Font.Medium
+                                }
+                                DropDownIndicator {
+                                    Layout.alignment: Qt.AlignVCenter
+                                    rotation: actionEditor.isSectionOpen(
+                                        actionSection.sectionTitle) ? 0 : -90
+                                    indicatorColor: root.tokens.textSecondary
+                                }
                             }
-                            actionEditor.injectMode = value
+                            background: Rectangle {
+                                radius: 6
+                                color: sectionHeaderButton.hovered
+                                    ? root.tokens.buttonHover : "transparent"
+                            }
+                        }
+
+                        // 折叠动画容器：收起时高度收到 0，展开时撑到列表
+                        // 自然高度，收和放走同一段过渡。
+                        Item {
+                            id: sectionItemsClip
+                            Layout.fillWidth: true
+                            readonly property bool expanded:
+                                actionEditor.isSectionOpen(actionSection.sectionTitle)
+                            implicitHeight: expanded
+                                ? sectionItemsColumn.implicitHeight : 0
+                            clip: true
+                            visible: height > 0
+                            Behavior on implicitHeight {
+                                NumberAnimation {
+                                    duration: 160
+                                    easing.type: Easing.OutCubic
+                                }
+                            }
+
+                            ColumnLayout {
+                                id: sectionItemsColumn
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.top: parent.top
+                                spacing: 2
+
+                                Repeater {
+                                    model: actionSection.modelData.items
+
+                                    delegate: AbstractButton {
+                                        required property string modelData
+                                        objectName: "actionEditorAction_" + modelData
+                                        // 当前这个手势正在用的动作，字体加粗标记。
+                                        readonly property bool current:
+                                            actionEditor.isCurrentOption(modelData)
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: 28
+                                        hoverEnabled: true
+                                        Accessible.name: modelData
+                                        onClicked: actionEditor.applyOptionToActiveTrigger(
+                                            modelData)
+
+                                        contentItem: UiLabel {
+                                            tokens: root.tokens
+                                            kind: bodyKind
+                                            leftPadding: 16
+                                            rightPadding: 6
+                                            elide: Text.ElideRight
+                                            verticalAlignment: Text.AlignVCenter
+                                            text: SettingsController.formatActionText(modelData)
+                                            font.weight: parent.current
+                                                ? Font.DemiBold : Font.Normal
+                                        }
+                                        background: Rectangle {
+                                            radius: 6
+                                            color: parent.hovered
+                                                ? root.tokens.buttonHover : "transparent"
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
-                UiLabel {
-                    id: injectModeHint
-                    objectName: "actionEditorInjectModeHint"
-                    tokens: root.tokens
-                    kind: noteKind
-                    Layout.preferredWidth: 126
-                    Layout.minimumWidth: 126
-                    Layout.maximumWidth: 126
-                    visible: actionEditor.injectModeHintText.length > 0
-                    text: actionEditor.injectModeHintText
-                    wrapMode: Text.Wrap
-                }
+            }
 
             }
+        }
+
+        // 错误提示和按钮固定在面板底部，不跟着内容滚走；左右留出面板内边距，
+        // 按钮不会顶到面板边缘外面。
+        footer: Item {
+            // 底部留白与面板左右版心一致，注入方式那一行不贴着边缘。
+            implicitHeight: footerColumn.implicitHeight + tokens.dialogPadding
+
+            ColumnLayout {
+            id: footerColumn
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.leftMargin: tokens.dialogPadding
+            anchors.rightMargin: tokens.dialogPadding
+            spacing: tokens.spacingSmall
 
             UiLabel {
                 id: actionEditorValidationError
@@ -1771,23 +2294,145 @@ Item {
             RowLayout {
                 Layout.fillWidth: true
                 spacing: tokens.spacingSmall
-                Item { Layout.fillWidth: true }
-                CompactButton {
-                    objectName: "actionEditorCancelButton"
+
+                // 注入方式是整颗按键共用的设置，单独放在取消/完成这一行。
+                UiLabel {
+                    id: injectModeTitle
+                    objectName: "actionEditorInjectModeTitle"
                     tokens: root.tokens
-                    compactMinimumWidth: tokens.buttonWidth2Chars
-                    text: qsTr("取消")
-                    onClicked: actionEditor.close()
+                    kind: bodyKind
+                    text: qsTr("注入方式")
+                    font.pixelSize: tokens.fontSizeControl
+                    font.weight: Font.Medium
+                    verticalAlignment: Text.AlignVCenter
                 }
+                InjectModeCombo {
+                    id: injectModeCombo
+                    objectName: "actionEditorInjectModeCombo"
+                    tokens: root.tokens
+                    // 宽度按最长选项给足，框里和下拉里都不截断。
+                    Layout.preferredWidth:
+                        Math.ceil(popupIdealWidth) + leftPadding + rightPadding
+                    model: SettingsController.injectModeOptions
+                    Accessible.name: actionEditor.buttonName + qsTr("注入方式")
+                    onActivated: {
+                        const option = model[index]
+                        const value = option ? String(option.value) : ""
+                        // 驱动级用不了的动作：这一项直接不可选，选了也停回原来的值，
+                        // 不再弹任何解释。
+                        if (!option || option.available === false
+                                || actionEditor.isModeBlocked(value)) {
+                            injectModeCombo.syncFromMode(actionEditor.injectMode)
+                            return
+                        }
+                        actionEditor.injectMode = value
+                    }
+                }
+
+                Item { Layout.fillWidth: true }
                 CompactButton {
                     objectName: "actionEditorSaveButton"
                     tokens: root.tokens
                     compactMinimumWidth: tokens.buttonWidth2Chars
                     text: qsTr("完成")
-                    enabled: actionEditor.rowIndex >= 0
+                    // 没有任何草稿改动时置灰：落盘只发生在真的改了东西之后。
+                    enabled: actionEditor.rowIndex >= 0 && actionEditor.draftDirty
                     highlighted: true
                     onClicked: actionEditor.saveDraft()
                 }
+            }
+            }
+        }
+    }
+
+    // 编辑面板点「取消」的二级确认：面板里的改动是草稿，确认后才丢弃，
+    // ✕ 和「完成」都是保存，只有这条路径不落盘。
+    SettingsDialog {
+        id: actionEditorDiscardConfirmDialog
+        tokens: root.tokens
+        objectName: "actionEditorDiscardConfirmDialog"
+        title: qsTr("放弃修改？")
+        modal: true
+        anchors.centerIn: parent
+        width: Math.min(430, root.width - 28)
+        standardButtons: Dialog.Ok | Dialog.Cancel
+        onAccepted: {
+            // 确认放弃：整个会话的缓冲一起清掉，关闭时不再暂存。
+            actionEditor.pendingEdits = ({})
+            actionEditor.closeFinalizesSession = true
+            actionEditor.requestClose()
+        }
+
+        contentItem: ColumnLayout {
+            spacing: root.tokens.spacingLarge
+            UiLabel {
+                tokens: root.tokens
+                kind: bodyKind
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                // 只改了当前这颗还是老话；改了多颗 / 多个应用就整个会话汇总。
+                text: {
+                    const summary = actionEditor.pendingEditSummary()
+                    if (summary.rows <= 1)
+                        return qsTr("这颗按键的修改还没保存，放弃后无法撤销。")
+                    if (summary.apps > 1)
+                        return qsTr("共修改了 %1 颗按键、%2 个应用，这些修改还没保存，放弃后无法撤销。")
+                            .arg(summary.buttons).arg(summary.apps)
+                    return qsTr("共修改了 %1 颗按键，这些修改还没保存，放弃后无法撤销。")
+                        .arg(summary.buttons)
+                }
+            }
+        }
+    }
+
+    // 手势备注名：写进当前手势的草稿，卡片上优先显示备注名；
+    // 留空就回到默认（显示动作本身）。
+    SettingsDialog {
+        id: actionEditorNoteDialog
+        tokens: root.tokens
+        objectName: "actionEditorNoteDialog"
+        title: qsTr("备注")
+        titleNote: qsTr("留空显示动作本身")
+        modal: true
+        preferredWidth: 360
+        standardButtons: Dialog.Ok | Dialog.Cancel
+
+        property string targetTrigger: "single_click"
+
+        function openForActiveTrigger() {
+            targetTrigger = actionEditor.activeTrigger
+            noteField.text = targetTrigger === "single_click"
+                ? actionEditor.primaryNote
+                : targetTrigger === "double_click"
+                    ? actionEditor.doubleNote : actionEditor.longNote
+            open()
+        }
+
+        onOpened: {
+            noteField.forceActiveFocus()
+            noteField.selectAll()
+        }
+
+        onAccepted: {
+            const value = noteField.text.trim()
+            if (targetTrigger === "single_click")
+                actionEditor.primaryNote = value
+            else if (targetTrigger === "double_click")
+                actionEditor.doubleNote = value
+            else
+                actionEditor.longNote = value
+        }
+
+        contentItem: ColumnLayout {
+            spacing: root.tokens.spacingLarge
+
+            CompactTextField {
+                id: noteField
+                objectName: "actionEditorNoteField"
+                tokens: root.tokens
+                Layout.fillWidth: true
+                placeholderText: qsTr("留空显示动作本身")
+                Accessible.name: qsTr("备注")
             }
         }
     }
@@ -1909,6 +2554,7 @@ Item {
                     anchors.fill: parent
                     // 稿子 .wires 叠在 .stage 照片之上。
                     z: 2
+                    // 渐隐/渐显只在 "editing" 状态里设置，由根部 transitions 驱动。
 
                     // Canvas 的几何（含位置）一变 Qt 就会自动重画，所以让外层 Item
                     // 平移，Canvas 自身在其中保持 (0,0) 不动。
@@ -1933,6 +2579,7 @@ Item {
                     objectName: "activeMappingLine"
                     anchors.fill: parent
                     z: 2
+                    // 渐隐/渐显只在 "editing" 状态里设置，由根部 transitions 驱动。
 
                     Item {
                         x: mappingList.connectorBandX
@@ -1955,6 +2602,23 @@ Item {
                     function onSelectedButtonIdChanged() {
                         root.scheduleConnectorRepaint()
                     }
+                    function onMappingEditTargetChanged() {
+                        // 控制器先发信号再换模型，所以等模型换完再刷新面板。
+                        Qt.callLater(root.refreshOpenEditor)
+                    }
+                    function onActivePageIndexChanged() {
+                        // 换页不改变按键页的布局：离开时只把面板藏起来，
+                        // 回来时原样打开，遥控器/卡片/连线全程一动不动。
+                        if (SettingsController.activePageIndex === 1) {
+                            if (!actionEditor.hiddenByPageSwitch)
+                                return
+                            actionEditor.hiddenByPageSwitch = false
+                            panelCloseTimer.stop()
+                            actionEditor.open()
+                            return
+                        }
+                        root.hideEditorForPageSwitch()
+                    }
                 }
 
                 Item {
@@ -1965,6 +2629,9 @@ Item {
                     width: mappingList.sideCardWidth
                     height: parent.height
                     z: 3
+                    // 选中按键后卡片与连线一起淡出，把舞台让给右侧面板。
+                    // 渐隐/渐显只在 "editing" 状态里设置，由根部 transitions 驱动。
+                    enabled: !root.mappingPanelExpanded
                     onXChanged: root.scheduleConnectorRepaint()
                     onYChanged: root.scheduleConnectorRepaint()
                     onWidthChanged: root.scheduleConnectorRepaint()
@@ -2028,7 +2695,27 @@ Item {
                     id: photoSidebar
                     objectName: "photoSidebar"
                     // 稿子 .stage：left 312（= 卡片 300 + 12），140×448。
-                    x: (parent.width - width) / 2
+                    // 面板打开时实物图退到「板宽 − 面板宽」的区域里居中，向左滑动。
+                    // 位移放在 transform 里：普通布局变化（切页、改窗口大小）
+                    // 不会带出移动动画，只有面板开关才滑。
+                    // 面板展开时实物图要退到的位置（向左为负）。这里只按布局
+                    // 宽度算、不看面板开关状态：状态过渡需要它当固定终点，
+                    // 否则关闭瞬间它自己先变回 0，滑回动画就被吃掉了。
+                    readonly property real panelShiftX: {
+                        const available = Math.max(root.mappingPhotoColumnWidth,
+                            mappingList.width - root.mappingPanelWidth)
+                        return (available - width) / 2
+                            - (mappingList.width - width) / 2
+                    }
+                    x: (mappingList.width - width) / 2
+                    transform: Translate {
+                        id: panelShift
+                        // 位移由根部 states/transitions 驱动，和面板滑入/滑出同一节奏。
+                        x: 0
+                        // 滑动改的是 transform，不会触发布局 x/y 信号，连线
+                        // 画布得跟着每帧重画，否则滑回后显示的是过期内容。
+                        onXChanged: root.scheduleConnectorRepaint()
+                    }
                     y: 0
                     width: root.mappingPhotoColumnWidth
                     height: parent.height
@@ -2138,6 +2825,12 @@ Item {
                                 required property real hotspotHeight
                                 required property bool isSelected
                                 required property bool isVoice
+                                required property string actionText
+                                required property string doubleClickText
+                                required property string longPressText
+                                required property string singleNote
+                                required property string doubleNote
+                                required property string longNote
 
                                 width: hotspotWidth * photoImage.paintedWidth
                                 height: hotspotHeight * photoImage.paintedHeight
@@ -2158,6 +2851,133 @@ Item {
                                 onVisibleChanged: root.scheduleConnectorRepaint()
                                 Component.onCompleted: root.scheduleConnectorRepaint()
 
+                                // 编辑中的按键：只在面板打开时显示一块贴键形的
+                                // 亮绿描边。圆键画圆、方向键画圆环上的弧段、
+                                // 音量键画摇杆的半边，都严丝合缝地盖住键帽。
+                                Item {
+                                    id: photoKeyHighlight
+                                    objectName: "photoHotspotHighlight_"
+                                        + photoHotspot.buttonId
+                                    // 亮绿高亮：描边用实色，填充带一点不透明
+                                    // 度；选中与悬浮预览共用这一套高亮（悬浮
+                                    // 时整块半透明）。
+                                    readonly property color keyGreen: "#4ade80"
+                                    readonly property real hotX: photoHotspot.hotspotX
+                                    readonly property real hotY: photoHotspot.hotspotY
+                                    readonly property var spec: root.photoKeySpec(
+                                        photoHotspot.buttonId, hotX, hotY,
+                                        photoHotspot.hotspotWidth,
+                                        photoHotspot.hotspotHeight,
+                                        photoImage.paintedWidth > 0
+                                            ? photoImage.paintedHeight
+                                                / photoImage.paintedWidth : 1.5)
+                                    readonly property string kind:
+                                        spec ? String(spec.kind) : ""
+                                    readonly property real unitW:
+                                        photoImage.paintedWidth
+                                    readonly property real unitH:
+                                        photoImage.paintedHeight
+                                    anchors.fill: parent
+                                    // 悬浮预览：编辑面板打开时，鼠标浮上
+                                    // 未选中的按键也点亮同一块键形高亮，
+                                    // 整体压低不透明度，让"这里可以点"
+                                    // 的反馈更明确。面板打开时 hover 被
+                                    // Overlay 层截走，所以这里用根部的
+                                    // editorHoverButtonId（overlay 转发层
+                                    // 算出的命中按键）判断；连线模式不点
+                                    // 亮键形，也不显示悬浮卡片。
+                                    readonly property bool hoveredPreview:
+                                        root.mappingPanelExpanded
+                                        && !photoHotspot.isSelected
+                                        && root.editorHoverButtonId
+                                            === photoHotspot.buttonId
+                                    visible: hoveredPreview
+                                        || (photoHotspot.isSelected
+                                            && root.mappingPanelExpanded)
+                                    opacity: hoveredPreview ? 0.5 : 1.0
+
+                                    // 圆键 / 普通矩形键。
+                                    Rectangle {
+                                        readonly property bool flatKey:
+                                            photoKeyHighlight.kind === "circle"
+                                            || photoKeyHighlight.kind === "rect"
+                                        anchors.centerIn: parent
+                                        anchors.horizontalCenterOffset: flatKey
+                                            ? (photoKeyHighlight.spec.cx
+                                                - photoKeyHighlight.hotX)
+                                                * photoKeyHighlight.unitW : 0
+                                        anchors.verticalCenterOffset: flatKey
+                                            ? (photoKeyHighlight.spec.cy
+                                                - photoKeyHighlight.hotY)
+                                                * photoKeyHighlight.unitH : 0
+                                        visible: flatKey
+                                        width: flatKey
+                                            ? photoKeyHighlight.spec.w
+                                                * photoKeyHighlight.unitW : 0
+                                        height: flatKey
+                                            ? photoKeyHighlight.spec.h
+                                                * photoKeyHighlight.unitH : 0
+                                        radius: photoKeyHighlight.kind === "circle"
+                                            ? width / 2 : Math.min(width, height) / 2
+                                        color: Qt.rgba(
+                                            photoKeyHighlight.keyGreen.r,
+                                            photoKeyHighlight.keyGreen.g,
+                                            photoKeyHighlight.keyGreen.b, 0.18)
+                                        border.width: 2
+                                        border.color: photoKeyHighlight.keyGreen
+                                    }
+
+                                    // 方向键：圆环上的一段弧。
+                                    Shape {
+                                        id: arcHighlight
+                                        readonly property bool isArc:
+                                            photoKeyHighlight.kind === "arc"
+                                        anchors.centerIn: parent
+                                        anchors.horizontalCenterOffset: isArc
+                                            ? (photoKeyHighlight.spec.cx
+                                                - photoKeyHighlight.hotX)
+                                                * photoKeyHighlight.unitW : 0
+                                        anchors.verticalCenterOffset: isArc
+                                            ? (photoKeyHighlight.spec.cy
+                                                - photoKeyHighlight.hotY)
+                                                * photoKeyHighlight.unitH : 0
+                                        visible: isArc
+                                        width: isArc
+                                            ? photoKeyHighlight.spec.rx * 2
+                                                * photoKeyHighlight.unitW : 0
+                                        height: isArc
+                                            ? photoKeyHighlight.spec.ry * 2
+                                                * photoKeyHighlight.unitH : 0
+
+                                        ShapePath {
+                                            fillColor: "transparent"
+                                            strokeColor: photoKeyHighlight.keyGreen
+                                            // 只描一条细弧线，跟圆键的 2px 描边一致，
+                                            // 不再把整段环带涂成实心。
+                                            strokeWidth: 2
+                                            capStyle: ShapePath.RoundCap
+                                            PathAngleArc {
+                                                centerX: arcHighlight.width / 2
+                                                centerY: arcHighlight.height / 2
+                                                radiusX:
+                                                    photoKeyHighlight.kind === "arc"
+                                                        ? photoKeyHighlight.spec.rx
+                                                            * photoKeyHighlight.unitW : 0
+                                                radiusY:
+                                                    photoKeyHighlight.kind === "arc"
+                                                        ? photoKeyHighlight.spec.ry
+                                                            * photoKeyHighlight.unitH : 0
+                                                startAngle:
+                                                    photoKeyHighlight.kind === "arc"
+                                                        ? photoKeyHighlight.spec.start : 0
+                                                sweepAngle:
+                                                    photoKeyHighlight.kind === "arc"
+                                                        ? photoKeyHighlight.spec.sweep : 0
+                                            }
+                                        }
+                                    }
+                                }
+
                                 // 稿子 .wires .halo：r 7 的选中光晕，圆点由连线 Canvas 绘制。
                                 Rectangle {
                                     objectName: "photoHotspotMarker_" + photoHotspot.buttonId
@@ -2166,22 +2986,38 @@ Item {
                                     height: 14
                                     z: 1
                                     visible: photoHotspot.isSelected
+                                        && !root.mappingPanelExpanded
                                     radius: 7
                                     color: tokens.halo
                                 }
 
                                 TapHandler {
-                                    onTapped: SettingsController.selectButton(photoHotspot.buttonId)
-                                }
-                                HoverHandler { id: hotspotHover }
-                                Rectangle {
-                                    anchors.centerIn: parent
-                                    width: 14
-                                    height: 14
-                                    z: 1
-                                    visible: hotspotHover.hovered && !photoHotspot.isSelected
-                                    radius: 7
-                                    color: tokens.halo
+                                    onTapped: {
+                                        // 连线模式（面板关闭）下：点未选中的
+                                        // 按键先选中，再点一下已选中的按键直接
+                                        // 进编辑面板，不用非得点卡片。
+                                        const wasSelected =
+                                            SettingsController.selectedButtonId
+                                            === photoHotspot.buttonId
+                                        SettingsController.selectButton(
+                                            photoHotspot.buttonId)
+                                        // 面板开着时可以随手点实物图上的另一个
+                                        // 按键，直接切到那颗按键的映射。
+                                        if (actionEditor.visible
+                                                || (wasSelected
+                                                    && !root.mappingPanelOpen))
+                                            actionEditor.openForRow(
+                                                photoHotspot.index,
+                                                photoHotspot.buttonId,
+                                                root.shortButtonName(
+                                                    photoHotspot.buttonId),
+                                                photoHotspot.actionText,
+                                                photoHotspot.doubleClickText,
+                                                photoHotspot.longPressText,
+                                                photoHotspot.singleNote,
+                                                photoHotspot.doubleNote,
+                                                photoHotspot.longNote)
+                                    }
                                 }
                             }
                         }
@@ -2207,6 +3043,8 @@ Item {
                     width: mappingList.sideCardWidth
                     height: parent.height
                     z: 3
+                    // 渐隐/渐显只在 "editing" 状态里设置，由根部 transitions 驱动。
+                    enabled: !root.mappingPanelExpanded
                     onXChanged: root.scheduleConnectorRepaint()
                     onYChanged: root.scheduleConnectorRepaint()
                     onWidthChanged: root.scheduleConnectorRepaint()
@@ -2436,6 +3274,198 @@ Item {
                 id: mappingMessageDismissTimer
                 interval: 5000
                 onTriggered: mappingMessageBubble.dismissed = true
+            }
+        }
+
+        // 实物图按键的悬浮卡片：默认不显示，只有鼠标浮在某颗键上时才
+        // 跟着鼠标出现，上中下三行分别是单击 / 双击 / 长按。读数直接绑
+        // 模型；正在编辑的那颗键改读面板里的草稿，改了立刻同步。
+        Item {
+            id: photoHoverCard
+            objectName: "photoHoverCard"
+            readonly property int textCap: 220
+            readonly property string buttonId: root.editorHoverButtonId
+            // 内容锁在最近一次悬浮到的按键上：面板关闭、卡片渐隐的这
+            // 150ms 里内容不会先塌成“未设置”。
+            property string shownButtonId: ""
+            onButtonIdChanged: if (buttonId.length > 0) shownButtonId = buttonId
+            readonly property bool draftActive:
+                actionEditor.buttonId === shownButtonId
+            readonly property var modelRow: {
+                const wanted = shownButtonId
+                const count = photoHotspotRepeater.count
+                for (let i = 0; i < count; ++i) {
+                    const item = photoHotspotRepeater.itemAt(i)
+                    if (item && item.buttonId === wanted)
+                        return item
+                }
+                return null
+            }
+            readonly property string singleText: root.photoHoverText(
+                draftActive ? actionEditor.primaryText
+                            : (modelRow ? modelRow.actionText : ""),
+                draftActive ? actionEditor.primaryNote
+                            : (modelRow ? modelRow.singleNote : ""))
+            readonly property string doubleText: root.photoHoverText(
+                draftActive ? actionEditor.doubleText
+                            : (modelRow ? modelRow.doubleClickText : ""),
+                draftActive ? actionEditor.doubleNote
+                            : (modelRow ? modelRow.doubleNote : ""))
+            readonly property string longText: root.photoHoverText(
+                draftActive ? actionEditor.longText
+                            : (modelRow ? modelRow.longPressText : ""),
+                draftActive ? actionEditor.longNote
+                            : (modelRow ? modelRow.longNote : ""))
+            // 场景坐标换算到版面坐标（x/y 是相对父 item 的）。
+            readonly property point cursorPoint:
+                rc003MappingLayout.mapFromItem(null,
+                    root.editorHoverScenePos.x, root.editorHoverScenePos.y)
+            // 卡片宽度按三行里最长的那行算，超过上限就省略。
+            readonly property real valueWidth: Math.min(textCap,
+                Math.max(singleMetrics.advanceWidth,
+                    Math.max(doubleMetrics.advanceWidth,
+                        longMetrics.advanceWidth)) + 2)
+
+            z: 21
+            enabled: false
+            // 只有编辑状态下、鼠标浮在某颗键上时才显示；关掉面板时渐隐。
+            readonly property bool wantVisible:
+                root.mappingPanelExpanded
+                && buttonId.length > 0 && root.editorHoverScenePos.x >= 0
+            // 关闭面板时 120ms 快速渐隐，让连线卡片等它完全消失后再渐显。
+            opacity: wantVisible ? 1 : 0
+            visible: wantVisible || opacity > 0
+            Behavior on opacity {
+                NumberAnimation {
+                    duration: photoHoverCard.wantVisible ? 150 : 120
+                    easing.type: Easing.OutCubic
+                }
+            }
+            width: 12 + 22 + 8 + valueWidth + 12
+            height: photoHoverCardColumn.implicitHeight + 20
+            x: Math.max(8, Math.min(parent.width - width - 8,
+                cursorPoint.x + 18))
+            y: Math.max(8, Math.min(parent.height - height - 8,
+                cursorPoint.y + 16))
+
+            TextMetrics {
+                id: singleMetrics
+                font.family: root.tokens.fontFamily
+                font.pixelSize: root.tokens.fontSizeMappingKey
+                text: photoHoverCard.singleText.length > 0
+                    ? photoHoverCard.singleText : qsTr("未设置")
+            }
+            TextMetrics {
+                id: doubleMetrics
+                font.family: root.tokens.fontFamily
+                font.pixelSize: root.tokens.fontSizeMappingKey
+                text: photoHoverCard.doubleText.length > 0
+                    ? photoHoverCard.doubleText : qsTr("未设置")
+            }
+            TextMetrics {
+                id: longMetrics
+                font.family: root.tokens.fontFamily
+                font.pixelSize: root.tokens.fontSizeMappingKey
+                text: photoHoverCard.longText.length > 0
+                    ? photoHoverCard.longText : qsTr("未设置")
+            }
+
+            Rectangle {
+                anchors.fill: parent
+                radius: 10
+                color: root.tokens.surface
+                // 柔和投影：RHI 下用 MultiEffect，软件渲染时直接去掉。
+                layer.enabled: GraphicsInfo.shaderType === GraphicsInfo.RhiShader
+                layer.effect: MultiEffect {
+                    shadowEnabled: true
+                    shadowColor: "#40000000"
+                    shadowBlur: 0.55
+                    blurMax: 12
+                    shadowVerticalOffset: 2
+                }
+            }
+
+            Column {
+                id: photoHoverCardColumn
+                x: 12
+                y: 10
+                spacing: 6
+
+                Row {
+                    spacing: 8
+                    UiLabel {
+                        width: 22
+                        tokens: root.tokens
+                        kind: noteKind
+                        text: qsTr("单击")
+                        font.pixelSize: root.tokens.fontSizeTiny
+                        lineHeight: 1
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    UiLabel {
+                        tokens: root.tokens
+                        kind: bodyKind
+                        width: photoHoverCard.valueWidth
+                        text: photoHoverCard.singleText.length > 0
+                            ? photoHoverCard.singleText : qsTr("未设置")
+                        color: photoHoverCard.singleText.length > 0
+                            ? root.tokens.textPrimary : root.tokens.textTertiary
+                        font.pixelSize: root.tokens.fontSizeMappingKey
+                        lineHeight: 1
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                    }
+                }
+                Row {
+                    spacing: 8
+                    UiLabel {
+                        width: 22
+                        tokens: root.tokens
+                        kind: noteKind
+                        text: qsTr("双击")
+                        font.pixelSize: root.tokens.fontSizeTiny
+                        lineHeight: 1
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    UiLabel {
+                        tokens: root.tokens
+                        kind: bodyKind
+                        width: photoHoverCard.valueWidth
+                        text: photoHoverCard.doubleText.length > 0
+                            ? photoHoverCard.doubleText : qsTr("未设置")
+                        color: photoHoverCard.doubleText.length > 0
+                            ? root.tokens.textPrimary : root.tokens.textTertiary
+                        font.pixelSize: root.tokens.fontSizeMappingKey
+                        lineHeight: 1
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                    }
+                }
+                Row {
+                    spacing: 8
+                    UiLabel {
+                        width: 22
+                        tokens: root.tokens
+                        kind: noteKind
+                        text: qsTr("长按")
+                        font.pixelSize: root.tokens.fontSizeTiny
+                        lineHeight: 1
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    UiLabel {
+                        tokens: root.tokens
+                        kind: bodyKind
+                        width: photoHoverCard.valueWidth
+                        text: photoHoverCard.longText.length > 0
+                            ? photoHoverCard.longText : qsTr("未设置")
+                        color: photoHoverCard.longText.length > 0
+                            ? root.tokens.textPrimary : root.tokens.textTertiary
+                        font.pixelSize: root.tokens.fontSizeMappingKey
+                        lineHeight: 1
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                    }
+                }
             }
         }
 

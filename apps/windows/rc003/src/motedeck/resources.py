@@ -122,10 +122,12 @@ def _app_icon_directory_candidates() -> Iterator[Path]:
     yield Path(__file__).resolve().parent / "assets" / "icons"
 
 
-def find_tray_icon(state: str = "waiting") -> Optional[Path]:
+def find_tray_icon(state: str = "waiting", classic: bool = False) -> Optional[Path]:
     filename = (
         "remote-mic-stopped.png" if str(state) == "off" else "remote-mic-tray.png"
     )
+    if classic:
+        filename = filename.replace("remote-mic-", "remote-mic-classic-")
     for directory in _app_icon_directory_candidates():
         candidate = directory / filename
         if candidate.is_file():
@@ -133,8 +135,10 @@ def find_tray_icon(state: str = "waiting") -> Optional[Path]:
     return None
 
 
-def find_app_icon(state: str = "waiting") -> Optional[Path]:
+def find_app_icon(state: str = "waiting", classic: bool = False) -> Optional[Path]:
     filename = _APP_ICON_FILENAMES.get(str(state), _APP_ICON_FILENAMES["waiting"])
+    if classic:
+        filename = filename.replace("remote-mic-", "remote-mic-classic-")
     for directory in _app_icon_directory_candidates():
         candidate = directory / filename
         if candidate.is_file():
@@ -142,16 +146,19 @@ def find_app_icon(state: str = "waiting") -> Optional[Path]:
     return None
 
 
-def find_window_icon() -> Optional[Path]:
+def find_window_icon(classic: bool = False) -> Optional[Path]:
     """Window/taskbar icon: the shipped .ico, not the flat PNG rendering.
 
     Fixed on purpose - it never follows the service state (only the tray
     icon does), and Windows' title bar/taskbar/Alt-Tab all read multi-size
-    .ico resources better than a single flat PNG.
+    .ico resources better than a single flat PNG. The classic variant
+    (MoteDeck 0.2.0 tile) swaps the rendered PNG; the packaged exe's
+    embedded .ico stays fixed at build time.
     """
 
+    filename = "remote-mic-classic.png" if classic else "remote-mic.ico"
     for directory in _app_icon_directory_candidates():
-        candidate = directory / "remote-mic.ico"
+        candidate = directory / filename
         if candidate.is_file():
             return candidate
     return None

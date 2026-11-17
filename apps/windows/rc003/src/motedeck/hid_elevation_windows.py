@@ -76,7 +76,9 @@ HELPER_PROTOCOL_VERSION = 1
 # the legacy-name cleanup paths kept for upgrades). Generation 21 refreshes
 # the helper source digest after the motedeck package refactor.
 # Generation 22 refreshes the digest after shared config/identity changes.
-HELPER_GENERATION = 22
+# Generation 23 refreshes the digest after the voice badge / device model
+# confirmation / icon-style release changed shared config and resource sources.
+HELPER_GENERATION = 23
 TASK_CONTRACT_VERSION = 5
 MANIFEST_FILENAME = "helper-manifest.json"
 INJECTION_RESULT_FILENAME = "hid-injection-result.json"
