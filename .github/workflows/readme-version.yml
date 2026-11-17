@@ -1,0 +1,89 @@
+name: readme-version
+
+# Keeps the "下载与安装" version line in README.md in sync with the released
+# version, so the README never carries a stale hard-coded version number.
+# Runs after a release is published, or manually via workflow_dispatch (for
+# example right after bumping src/motedeck/VERSION). Only README.md is
+# rewritten, and only when the version text actually changes.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: readme-version
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      # actions/checkout v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+
+      - name: Rewrite README version
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          python - <<'PY'
+          import os, pathlib, re, sys
+
+          tag = (os.environ.get("RELEASE_TAG") or "").strip()
+          version = tag[1:] if tag.startswith("v") else tag
+          if not version:
+              version = pathlib.Path(
+                  "apps/windows/rc003/src/motedeck/VERSION"
+              ).read_text(encoding="ascii").strip()
+          if not re.fullmatch(r"\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?", version):
+              sys.exit(f"unsupported version: {version!r}")
+
+          path = pathlib.Path("README.md")
+          lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+          for index, line in enumerate(lines):
+              if "当前正式版为" not in line:
+                  continue
+              line = re.sub(
+                  r"当前正式版为 \*\*[^*]+\*\*",
+                  f"当前正式版为 **{version}**",
+                  line,
+              )
+              line = re.sub(
+                  r"MoteDeckSetup-[0-9A-Za-z.-]+-unsigned\.exe",
+                  f"MoteDeckSetup-{version}-unsigned.exe",
+                  line,
+              )
+              line = re.sub(
+                  r"releases/download/v[0-9A-Za-z.-]+/",
+                  f"releases/download/v{version}/",
+                  line,
+              )
+              line = re.sub(
+                  r"releases/tag/v[0-9A-Za-z.-]+",
+                  f"releases/tag/v{version}",
+                  line,
+              )
+              lines[index] = line
+              break
+
+          path.write_text("".join(lines), encoding="utf-8")
+          PY
+
+      - name: Commit if the README changed
+        shell: bash
+        run: |
+          if git diff --quiet -- README.md; then
+            echo "README already up to date"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          git commit -m "docs: sync README version with the latest release"
+          git push
