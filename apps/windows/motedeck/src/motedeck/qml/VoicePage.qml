@@ -833,10 +833,9 @@ Item {
                                         text: qsTr("录入")
                                         // 插件语音键不录快捷键：控件保留占位，名称框才和其他行一样长。
                                         opacity: keyCard.pluginLocked ? 0 : 1
+                                        // 录入只负责打开弹窗，本身不写配置，不能受保存/启动/语音进行中等忙碌状态限制，
+                                        // 否则忙碌期间点录入毫无反应（禁用态在这个按钮上几乎看不出来）。
                                         enabled: !keyCard.pluginLocked
-                                            && !root.voiceHotkeyBusy
-                                            && !root.configurationWriteBusy
-                                            && !root.voiceHotkeyRuntimeBusy
                                         onClicked: {
                                             root.voiceRecorderSlot = keyCard.slot
                                             voiceShortcutRecorder.openRecorder()

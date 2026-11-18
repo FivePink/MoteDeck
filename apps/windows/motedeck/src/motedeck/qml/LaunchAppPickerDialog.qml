@@ -68,8 +68,12 @@ SettingsDialog {
         if (!keepError)
             errorText = ""
         keepError = false
-        SettingsController.refreshMappingApplications()
-        resetFromSelected()
+        // 枚举窗口和抽图标是同步阻塞的（刚启动时首次调用最慢），放在弹窗
+        // 显示之后再刷新，避免点了「启动应用」却迟迟看不到窗口。
+        Qt.callLater(function() {
+            SettingsController.refreshMappingApplications()
+            resetFromSelected()
+        })
     }
     onAccepted: {
         if (chosen.length === 0) {

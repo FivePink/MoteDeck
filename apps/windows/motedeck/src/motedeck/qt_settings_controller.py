@@ -271,7 +271,9 @@ class SettingsController(QObject):
     _BUTTONS_PAGE_INDEX = 1
     _VOICE_PAGE_INDEX = 2
     _DESKTOP_BEHAVIOR_PAGE_INDEX = _DEVICE_PAGE_INDEX
-    _KEY_DETECTION_TIMEOUT_SECONDS = key_detection_bridge.STALE_AFTER_SECONDS
+    # 持续检测期间定时重建桥请求：桥侧把超过 STALE_AFTER_SECONDS 的
+    # 请求视为过期并清理，长时间空闲不重建就收不到下一颗键。
+    _KEY_DETECTION_REQUEST_REFRESH_SECONDS = 30.0
     _KEY_DETECTION_USAGE_TO_BUTTON = {
         usage: button_id
         for usage, button_id in frida_compat.TAP_USAGE_TO_BUTTON.items()
@@ -636,7 +638,7 @@ class SettingsController(QObject):
         self._key_detection_listener = None
         self._key_detection_tap = None
         self._key_detection_bridge_request = None
-        self._key_detection_started_at = 0.0
+        self._key_detection_bridge_requested_at = 0.0
         self._key_detection_tap_usages = set()
         self._key_detection_active = False
         self._key_detection_text = (
@@ -2900,6 +2902,8 @@ class SettingsController(QObject):
         if action == "start":
             self._hotkey_capture = result.hotkey_capture
             self._key_detection_bridge_request = result.bridge_request
+            if result.bridge_request is not None:
+                self._key_detection_bridge_requested_at = time.monotonic()
             self._key_detection_listener = result.listener
             self._key_detection_tap = result.tap
             has_resource = bool(
@@ -2939,7 +2943,6 @@ class SettingsController(QObject):
                 self._set_key_detection_active_state(has_resource)
                 if result.ok:
                     self._key_detection_tap_usages.clear()
-                    self._key_detection_started_at = time.monotonic()
                     if result.bridge_request is not None:
                         message = "请按下要检测的遥控器按键"
                     elif result.listener is not None and result.tap is not None:
@@ -2978,6 +2981,8 @@ class SettingsController(QObject):
 
         self._hotkey_capture = result.hotkey_capture
         self._key_detection_bridge_request = result.bridge_request
+        if result.bridge_request is not None:
+            self._key_detection_bridge_requested_at = time.monotonic()
         self._key_detection_listener = result.listener
         self._key_detection_tap = result.tap
         has_resource = bool(
@@ -3103,9 +3108,9 @@ class SettingsController(QObject):
         """Handle one physical press on the Qt GUI thread.
 
         Raw Input emits only a logical button id; this detector never
-        executes the configured action. It stops after the first press,
-        selects the corresponding row, and leaves the user in control of
-        choosing/saving the Windows mapping.
+        executes the configured action. Detection keeps running after a
+        press so the user can keep scanning keys; it only ends when the
+        user presses “停止检测” or the page/window is left.
         """
 
         if (
@@ -3113,16 +3118,12 @@ class SettingsController(QObject):
             or self._input_operation_phase != "active"
         ):
             return
-        stop_requested = self.stopKeyDetection()
         if button_id:
             self.selectButton(button_id)
             display_name = remote_layout.display_names(self.activeRemoteProfile).get(button_id, button_id)
-            result = f"已检测：{display_name}；修改完成后会自动保存"
+            result = f"已检测：{display_name}；继续按按键可继续检测，点“停止检测”结束"
         else:
-            result = "检测到未知按键"
-        if not stop_requested:
-            result += "；检测未停止，请点击“停止检测”"
-        elif not button_id:
+            result = "检测到未知按键；继续按按键可继续检测，点“停止检测”结束"
             detail_text = details.strip().rstrip("。")
             if detail_text:
                 result += f"；{detail_text}"
@@ -6634,7 +6635,7 @@ class SettingsController(QObject):
 
     @Slot()
     def startKeyDetection(self) -> None:
-        """Listen for one real RC003 press without executing its action."""
+        """Keep listening for real RC003 presses until the user stops."""
 
         logger = logging_setup.get_logger(self._config_root)
 
@@ -6703,35 +6704,42 @@ class SettingsController(QObject):
 
     @Slot()
     def pollKeyDetectionBridge(self) -> None:
-        request = self._key_detection_bridge_request
-        if not self._key_detection_active:
-            return
         if (
-            time.monotonic() - self._key_detection_started_at
-            >= self._KEY_DETECTION_TIMEOUT_SECONDS
+            not self._key_detection_active
+            or self._input_operation_phase != "active"
         ):
-            if request is not None:
-                timeout_text = (
-                    "未检测到按键；请确认遥控器已连接，"
-                    "再点击“检测按键”重试"
-                )
-            else:
-                timeout_text = (
-                    "未检测到按键；请确认遥控器已连接，"
-                    "再点击“检测按键”重试"
-                )
-            self._key_detection_started_at = 0.0
-            self._key_detection_tap_usages.clear()
-            self._request_input_stop(
-                kind="key_detection",
-                key_detection_success_message=timeout_text,
-            )
             return
+        request = self._key_detection_bridge_request
         if request is None:
             return
         button_id = key_detection_bridge.poll_detection(request)
         if button_id is not None:
+            # 桥侧认领请求后会删掉请求文件，持续检测必须马上补一份，
+            # 否则下一颗键不会再上报。
+            self._refresh_key_detection_bridge_request()
             self._on_raw_key_detected(button_id, " 来源=后台服务。")
+            return
+        # 长时间没有按键时定期重建请求，避免被桥侧按过期清理。
+        if (
+            time.monotonic() - self._key_detection_bridge_requested_at
+            >= self._KEY_DETECTION_REQUEST_REFRESH_SECONDS
+        ):
+            self._refresh_key_detection_bridge_request()
+
+    def _refresh_key_detection_bridge_request(self) -> None:
+        """Re-arm the file IPC request used by the running bridge."""
+
+        previous = self._key_detection_bridge_request
+        if previous is not None:
+            key_detection_bridge.cancel_detection(previous)
+        try:
+            request = key_detection_bridge.request_detection(self._config_root)
+        except OSError:
+            self._key_detection_bridge_request = None
+            self._key_detection_bridge_requested_at = 0.0
+            return
+        self._key_detection_bridge_request = request
+        self._key_detection_bridge_requested_at = time.monotonic()
 
     def _start_hotkey_capture(self) -> bool:
         logger = logging_setup.get_logger(self._config_root)
@@ -6902,7 +6910,6 @@ class SettingsController(QObject):
 
     @Slot(result=bool)
     def stopKeyDetection(self) -> bool:
-        self._key_detection_started_at = 0.0
         self._key_detection_tap_usages.clear()
         return self._request_input_stop(kind="key_detection")
 

@@ -327,6 +327,10 @@ Item {
     }
     // 面板关闭后清掉残留的悬浮高亮（过滤器在面板关闭后不再写入）。
     onMappingPanelOpenChanged: if (!mappingPanelOpen) editorHoverButtonId = ""
+    // 编辑状态退出、回到连线页面：持续检测随之自动结束。
+    onMappingPanelExpandedChanged: if (!mappingPanelExpanded
+            && SettingsController.keyDetectionActive)
+        SettingsController.stopKeyDetection()
     function editorHoverButtonAt(sceneX, sceneY) {
         for (let i = 0; i < photoHotspotRepeater.count; ++i) {
             const item = photoHotspotRepeater.itemAt(i)
@@ -416,6 +420,30 @@ Item {
             index, buttonId, shortButtonName(buttonId),
             card.actionText, card.doubleClickText, card.longPressText,
             card.singleNote, card.doubleNote, card.longNote)
+    }
+
+    // 检测到真实按键后，编辑状态下直接切到那颗键的编辑面板（不用再手点
+    // 一次）；连线状态只高亮，保持原样不弹面板。
+    function openEditorForDetectedButton(buttonId) {
+        if (!root.mappingPanelExpanded || !buttonId)
+            return
+        if (actionEditor.visible && actionEditor.buttonId === buttonId)
+            return
+        let hotspot = null
+        for (let i = 0; i < photoHotspotRepeater.count; ++i) {
+            const item = photoHotspotRepeater.itemAt(i)
+            if (item && item.buttonId === buttonId) {
+                hotspot = item
+                break
+            }
+        }
+        if (!hotspot)
+            return
+        actionEditor.openForRow(
+            hotspot.index, buttonId, shortButtonName(buttonId),
+            hotspot.actionText, hotspot.doubleClickText,
+            hotspot.longPressText, hotspot.singleNote,
+            hotspot.doubleNote, hotspot.longNote)
     }
 
     function visualRow(buttonId) {
@@ -2601,6 +2629,9 @@ Item {
                     target: SettingsController
                     function onSelectedButtonIdChanged() {
                         root.scheduleConnectorRepaint()
+                        // 编辑态下检测到的按键直接跳进它的编辑面板。
+                        Qt.callLater(root.openEditorForDetectedButton,
+                            SettingsController.selectedButtonId)
                     }
                     function onMappingEditTargetChanged() {
                         // 控制器先发信号再换模型，所以等模型换完再刷新面板。
@@ -2617,6 +2648,9 @@ Item {
                             actionEditor.open()
                             return
                         }
+                        // 切出按键页：持续检测自动结束。
+                        if (SettingsController.keyDetectionActive)
+                            SettingsController.stopKeyDetection()
                         root.hideEditorForPageSwitch()
                     }
                 }
@@ -3316,9 +3350,9 @@ Item {
                             : (modelRow ? modelRow.longPressText : ""),
                 draftActive ? actionEditor.longNote
                             : (modelRow ? modelRow.longNote : ""))
-            // 场景坐标换算到版面坐标（x/y 是相对父 item 的）。
+            // 卡片挂在 Overlay 层（见下方 parent），坐标也按 Overlay 换算。
             readonly property point cursorPoint:
-                rc003MappingLayout.mapFromItem(null,
+                Overlay.overlay.mapFromItem(null,
                     root.editorHoverScenePos.x, root.editorHoverScenePos.y)
             // 卡片宽度按三行里最长的那行算，超过上限就省略。
             readonly property real valueWidth: Math.min(textCap,
@@ -3326,7 +3360,10 @@ Item {
                     Math.max(doubleMetrics.advanceWidth,
                         longMetrics.advanceWidth)) + 2)
 
-            z: 21
+            // 编辑面板是 Overlay 里的 Popup.Item，普通页面 Item 的 z 再高
+            // 也会被它压住；卡片必须同样挂到 Overlay 层并取更高的 z。
+            parent: Overlay.overlay
+            z: 100
             enabled: false
             // 只有编辑状态下、鼠标浮在某颗键上时才显示；关掉面板时渐隐。
             readonly property bool wantVisible:
@@ -3343,9 +3380,11 @@ Item {
             }
             width: 12 + 22 + 8 + valueWidth + 12
             height: photoHoverCardColumn.implicitHeight + 20
-            x: Math.max(8, Math.min(parent.width - width - 8,
+            x: Math.max(8, Math.min(
+                (parent ? parent.width : 0) - width - 8,
                 cursorPoint.x + 18))
-            y: Math.max(8, Math.min(parent.height - height - 8,
+            y: Math.max(8, Math.min(
+                (parent ? parent.height : 0) - height - 8,
                 cursorPoint.y + 16))
 
             TextMetrics {

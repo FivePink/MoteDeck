@@ -31,6 +31,14 @@ ApplicationWindow {
     property bool pendingExitAutoSave: false
     property bool applicationExitInProgress: false
 
+    // 最小化 / 隐藏到托盘（含关闭到托盘）：持续检测自动结束。
+    onVisibilityChanged: {
+        if (visibility === Window.Minimized || !visible) {
+            if (SettingsController.keyDetectionActive)
+                SettingsController.stopKeyDetection()
+        }
+    }
+
     // 按键页拖拽导入的中间态：暗罩和提示卡分两层，
     // 卡片不跟着遮罩一起变透明，文字才清楚。
     readonly property bool mappingImportDragActive: mappingImportDropArea.containsDrag

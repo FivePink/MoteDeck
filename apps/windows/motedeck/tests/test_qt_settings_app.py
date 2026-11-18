@@ -4908,17 +4908,20 @@ class SettingsControllerTests(unittest.TestCase):
                 )
             )
             deadline = time.monotonic() + 1.0
-            while controller.keyDetectionActive and time.monotonic() < deadline:
+            while (
+                "已检测" not in controller.keyDetectionText
+                and time.monotonic() < deadline
+            ):
                 app.processEvents()
                 time.sleep(0.001)
+            self.assertTrue(controller.keyDetectionActive)
+            self.assertEqual(listeners[0].stop_calls, 0)
         finally:
             controller.shutdownBackgroundTasks()
-        self.assertFalse(controller.keyDetectionActive)
-        self.assertEqual(listeners[0].stop_calls, 1)
         self.assertEqual(controller.selectedButtonId, "power")
         self.assertEqual(model.selected_button_id(), "power")
         self.assertIn("电源键", controller.keyDetectionText)
-        self.assertIn("修改完成后会自动保存", controller.keyDetectionText)
+        self.assertIn("继续按按键可继续检测", controller.keyDetectionText)
 
     def test_real_key_detection_failure_is_reported_in_the_ui(self):
         controller, _ = self._make_controller(selected_remote=True)
@@ -5008,15 +5011,11 @@ class SettingsControllerTests(unittest.TestCase):
         ):
             controller.startKeyDetection()
 
-        self.assertEqual(
-            controller._KEY_DETECTION_TIMEOUT_SECONDS,
-            key_detection_bridge.STALE_AFTER_SECONDS,
-        )
+        self.assertTrue(controller.keyDetectionActive)
         self.assertIn("Windows 按键通道已启动", controller.keyDetectionText)
         self.assertIn("等待补充通道连接", controller.keyDetectionText)
         self.assertIn("约 1 分钟", controller.keyDetectionText)
         self.assertNotIn("均已就绪", controller.keyDetectionText)
-        self.assertGreater(controller._key_detection_started_at, 0.0)
 
         tap_instances[0].status_handler(
             frida_compat.HidTapState.ATTACHED_WAITING_IO.value,
@@ -5071,10 +5070,10 @@ class SettingsControllerTests(unittest.TestCase):
 
         tap_instances[0].report_handler(1, bytes.fromhex("520000000000"))
 
-        self.assertFalse(controller.keyDetectionActive)
+        self.assertTrue(controller.keyDetectionActive)
         self.assertEqual(controller.selectedButtonId, "up")
         self.assertEqual(model.selected_button_id(), "up")
-        self.assertIn("修改完成后会自动保存", controller.keyDetectionText)
+        self.assertIn("继续按按键可继续检测", controller.keyDetectionText)
 
     def test_tap_detection_ignores_unknown_or_empty_reports(self):
         controller, _ = self._make_controller()
@@ -5089,7 +5088,7 @@ class SettingsControllerTests(unittest.TestCase):
         self.assertTrue(controller.keyDetectionActive)
         self.assertEqual(controller.selectedButtonId, "ok")
 
-    def test_local_detection_times_out_and_releases_both_channels(self):
+    def test_local_detection_keeps_listening_until_the_user_stops(self):
         controller, _ = self._make_controller(selected_remote=True)
         listener = mock.Mock()
         tap = mock.Mock()
@@ -5116,34 +5115,13 @@ class SettingsControllerTests(unittest.TestCase):
         ):
             controller.startKeyDetection()
 
-        controller._key_detection_started_at -= (
-            controller._KEY_DETECTION_TIMEOUT_SECONDS + 1.0
-        )
-        controller.pollKeyDetectionBridge()
-
-        self.assertFalse(controller.keyDetectionActive)
-        self.assertIsNone(controller._key_detection_listener)
-        self.assertIsNone(controller._key_detection_tap)
-        listener.stop.assert_called_once_with()
-        tap.stop.assert_called_once_with()
-        self.assertIn("未检测到按键", controller.keyDetectionText)
-
-    def test_local_detection_timeout_preserves_a_cleanup_error(self):
-        controller, _ = self._make_controller()
-        listener = mock.Mock()
-        listener.stop.side_effect = RuntimeError("listener stop failed")
-        controller._key_detection_listener = listener
-        controller._key_detection_active = True
-        controller._key_detection_started_at = (
-            time.monotonic() - controller._KEY_DETECTION_TIMEOUT_SECONDS - 1.0
-        )
-
         controller.pollKeyDetectionBridge()
 
         self.assertTrue(controller.keyDetectionActive)
         self.assertIs(controller._key_detection_listener, listener)
-        self.assertIn("停止 Windows 按键通道时出错", controller.keyDetectionText)
-        self.assertNotIn("等待真实按键超时", controller.keyDetectionText)
+        self.assertIs(controller._key_detection_tap, tap)
+        listener.stop.assert_not_called()
+        tap.stop.assert_not_called()
 
     def test_real_key_detection_stops_when_bridge_status_is_unavailable(self):
         controller, _ = self._make_controller()
@@ -5241,23 +5219,18 @@ class SettingsControllerTests(unittest.TestCase):
         self.assertIs(controller._key_detection_tap, tap)
         self.assertTrue(controller.keyDetectionActive)
 
-    def test_detected_key_does_not_claim_completion_when_stop_cannot_start(self):
+    def test_detected_key_keeps_detection_running_for_the_next_press(self):
         controller, _ = self._make_controller()
         listener = mock.Mock()
         controller._key_detection_listener = listener
         controller._set_key_detection_active_state(True)
         controller._set_input_operation_state("key_detection", "active")
 
-        with mock.patch.object(
-            controller,
-            "_start_background_task",
-            side_effect=RuntimeError("simulated stop start failure"),
-        ):
-            controller._on_raw_key_detected("up", "")
+        controller._on_raw_key_detected("up", "")
 
         self.assertTrue(controller.keyDetectionActive)
         self.assertIs(controller._key_detection_listener, listener)
-        self.assertIn("检测未停止", controller.keyDetectionText)
+        self.assertIn("继续按按键可继续检测", controller.keyDetectionText)
         self.assertIn("停止检测", controller.keyDetectionText)
 
     def test_hotkey_start_failure_retains_a_still_running_capture(self):
@@ -5423,7 +5396,7 @@ class SettingsControllerTests(unittest.TestCase):
         capture.stop.assert_called_once_with()
         self.assertIsNone(controller._hotkey_capture)
 
-    def test_real_key_detection_accepts_missing_usage_from_hid_tap_and_stops_both(self):
+    def test_real_key_detection_accepts_missing_usage_from_hid_tap_and_keeps_both(self):
         controller, model = self._make_controller(selected_remote=True)
         raw_instances = []
         tap_instances = []
@@ -5473,12 +5446,12 @@ class SettingsControllerTests(unittest.TestCase):
             controller.startKeyDetection()
             tap_instances[0].report_handler(1, bytes.fromhex("f10000000000"))
 
-        self.assertFalse(controller.keyDetectionActive)
+        self.assertTrue(controller.keyDetectionActive)
         self.assertEqual(controller.selectedButtonId, "back")
         self.assertEqual(model.selected_button_id(), "back")
-        self.assertIn("修改完成后会自动保存", controller.keyDetectionText)
-        self.assertEqual(raw_instances[0].stop_calls, 1)
-        self.assertEqual(tap_instances[0].stop_calls, 1)
+        self.assertIn("继续按按键可继续检测", controller.keyDetectionText)
+        self.assertEqual(raw_instances[0].stop_calls, 0)
+        self.assertEqual(tap_instances[0].stop_calls, 0)
 
     def test_running_bridge_detection_returns_button_without_starting_local_hid(self):
         controller, model = self._make_controller(selected_remote=True)
@@ -5521,14 +5494,20 @@ class SettingsControllerTests(unittest.TestCase):
                 "volume_down",
             )
         )
+        first_token = controller._key_detection_bridge_request.token
         controller.pollKeyDetectionBridge()
 
-        self.assertFalse(controller.keyDetectionActive)
+        self.assertTrue(controller.keyDetectionActive)
         self.assertEqual(controller.selectedButtonId, "volume_down")
         self.assertEqual(model.selected_button_id(), "volume_down")
-        self.assertIn("修改完成后会自动保存", controller.keyDetectionText)
+        self.assertIn("继续按按键可继续检测", controller.keyDetectionText)
+        # 桥认领请求后会删掉请求文件，持续检测必须自动补一份。
+        self.assertIsNotNone(controller._key_detection_bridge_request)
+        self.assertNotEqual(
+            controller._key_detection_bridge_request.token, first_token
+        )
 
-    def test_running_bridge_detection_times_out_cleanly(self):
+    def test_running_bridge_detection_keeps_the_request_armed_while_idle(self):
         controller, _ = self._make_controller(selected_remote=True)
         self._bridge_status_patch.stop()
         self._bridge_status_patch = mock.patch.object(
@@ -5546,15 +5525,18 @@ class SettingsControllerTests(unittest.TestCase):
         )
         controller.startKeyDetection()
         request = controller._key_detection_bridge_request
-        controller._key_detection_started_at -= (
-            controller._KEY_DETECTION_TIMEOUT_SECONDS + 1.0
+        controller._key_detection_bridge_requested_at -= (
+            controller._KEY_DETECTION_REQUEST_REFRESH_SECONDS + 1.0
         )
 
         controller.pollKeyDetectionBridge()
 
-        self.assertFalse(controller.keyDetectionActive)
+        self.assertTrue(controller.keyDetectionActive)
+        # 空闲超过刷新间隔：旧请求作废，重新补一份仍有效的请求。
         self.assertFalse(request.request_path.exists())
-        self.assertIn("未检测到按键", controller.keyDetectionText)
+        self.assertIsNotNone(controller._key_detection_bridge_request)
+        self.assertNotEqual(controller._key_detection_bridge_request.token, request.token)
+        self.assertTrue(controller._key_detection_bridge_request.request_path.exists())
 
     def test_running_bridge_without_a_ready_input_channel_fails_immediately(self):
         controller, _ = self._make_controller()
