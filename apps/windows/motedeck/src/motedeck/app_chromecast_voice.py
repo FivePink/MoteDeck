@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import array
 from typing import Optional
 import asyncio
 from . import ble_transport_winrt
 from . import bridge_runtime_status
+from . import config
 from . import hotkey
 from . import key_detection_bridge
 from . import key_mapping
+from . import vokie_bridge
 from . import win32_keys
 from typing import Optional
 from .app_constants import (
@@ -204,11 +207,67 @@ class ChromecastVoiceMixin:
                 begin_asr_capture=self._begin_chromecast_openmexia_voice,
                 forward_asr_pcm=self._feed_chromecast_openmexia_pcm,
                 end_asr_capture=self._end_chromecast_openmexia_voice,
+                plugin_voice_ready=self._chromecast_plugin_voice_ready,
+                begin_plugin_voice_audio=self._begin_chromecast_plugin_voice,
+                forward_plugin_voice_pcm=self._feed_chromecast_plugin_pcm,
+                end_plugin_voice_audio=self._end_chromecast_plugin_voice,
                 mic_passthrough=self._chromecast_mic_passthrough,
                 mic_button_event=self._chromecast_mic_button_event,
                 set_mic_blocked=self._set_runtime_voice_mic_blocked,
             )
         )
+
+    def _chromecast_plugin_voice_ready(self) -> bool:
+        """当前语音键是插件键、且插件已经连上时，长按直接过户给插件。"""
+
+        slot = self._active_voice_slot()
+        if not self._voice_slot_is_plugin(slot):
+            return False
+        entry = config.voice_key_config(self._config, slot)
+        if entry is not None and config.is_openmexia_plugin_id(entry.get("plugin")):
+            # OpenMexia 有自己的本机识别分支，不走 Vokie 的音频桥。
+            return False
+        bridge = vokie_bridge.active_bridge()
+        return bridge is not None and bridge.connected()
+
+    def _begin_chromecast_plugin_voice(self) -> bool:
+        """开插件语音会话；调用方（VoiceHost）已持有语音快捷键锁。"""
+
+        slot = self._active_voice_slot()
+        if not self._voice_slot_is_plugin(slot):
+            return False
+        if not self._begin_plugin_voice_audio_locked(slot):
+            return False
+        self._chromecast_plugin_voice_slot = slot
+        self._set_runtime_voice_active(True)
+        self._set_runtime_voice_result(bridge_runtime_status.VOICE_RUNTIME_ACTIVE)
+        self._logger.info(
+            "chromecast plugin voice audio hold started: slot=%s", slot
+        )
+        return True
+
+    def _feed_chromecast_plugin_pcm(self, samples) -> bool:
+        """把遥控器 PCM 经回环桥送进插件；返回是否送达。"""
+
+        bridge = vokie_bridge.active_bridge()
+        slot = self._chromecast_plugin_voice_slot
+        if bridge is None or slot is None:
+            return False
+        if not self._plugin_voice_audio_active:
+            return False
+        frame = array.array("h", samples)
+        frame = self._apply_voice_gain(frame, self._frame_gain_locked(slot, frame))
+        if self._plugin_voice_mode_is_quick_note:
+            # 闪记没有 Vokie 自己的提示，波形直接画在这边的电平胶囊上。
+            self._update_asr_level_locked(frame)
+        return bool(bridge.send_audio(frame.tobytes()))
+
+    def _end_chromecast_plugin_voice(self, reason: str) -> None:
+        """收尾插件语音会话；调用方（VoiceHost）已持有语音快捷键锁。"""
+
+        self._chromecast_plugin_voice_slot = None
+        self._end_plugin_voice_audio_locked(reason)
+        self._plugin_voice_started_this_press = False
 
     def _prepare_chromecast_voice_shortcut(self) -> None:
         """Apply the active voice key's recorded shortcut before the mic opens.

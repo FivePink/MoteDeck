@@ -689,6 +689,9 @@ class VoiceCaptureMixin:
         # 插件模式 id 是稳定标识，用户改名字也不变；旧配置还没回填 id 的
         # 时候退回按名字认。
         mode_id = str(entry.get("plugin_mode") or "") if entry else ""
+        # 闪记会话在 Vokie 侧不会自己退场，残留时会占住插件、导致其他模式
+        # 都起不来。每次开新会话前先补一条 stop，把它收干净。
+        bridge.send_audio_stop()
         if not bridge.send_audio_start(mode_name, mode_id):
             return False
         # 闪记在 Vokie 侧没有任何屏幕提示，复用 OpenMexia 长按的电平胶囊：

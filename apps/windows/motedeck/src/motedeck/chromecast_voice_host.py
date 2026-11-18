@@ -23,6 +23,10 @@ from . import bridge_runtime_status as status
 # ATVV decodes mono 16 kHz PCM; 100 ms blocks keep the writer queue shallow.
 _OUTPUT_BLOCK_SAMPLES = 1600
 
+# 插件会话要等按满长按阈值才开，这段时间的 PCM 先攒着一起补发，
+# 上限约一秒，避免一直按着不放时无限增长。
+_PLUGIN_BUFFER_SAMPLES = 16000
+
 
 @dataclass(frozen=True)
 class VoiceHostServices:
@@ -48,6 +52,12 @@ class VoiceHostServices:
     begin_asr_capture: Callable[[], bool] | None = None
     forward_asr_pcm: Callable | None = None
     end_asr_capture: Callable[[], bool] | None = None
+    # 插件语音键（Vokie）：长按把遥控器 PCM 直接过户给插件，不开虚拟声卡。
+    # 这些回调由宿主在持有语音快捷键锁时调用，内部不再加锁。
+    plugin_voice_ready: Callable[[], bool] | None = None
+    begin_plugin_voice_audio: Callable[[], bool] | None = None
+    forward_plugin_voice_pcm: Callable | None = None
+    end_plugin_voice_audio: Callable | None = None
     mic_passthrough: Callable[[], bool] | None = None
     mic_button_event: Callable[[str, bool], None] | None = None
     set_mic_blocked: Callable[[str], None] | None = None
@@ -79,6 +89,12 @@ class VoiceHost:
         self._asr_capture = False
         self._passthrough = False
         self._passthrough_down_pending = False
+        self._plugin_press = False
+        self._plugin_started = False
+        self._plugin_pcm = []
+        self._plugin_pcm_samples = 0
+        self._plugin_timer = None
+        self._plugin_token = None
 
     # -- receiver-facing API -------------------------------------------------
 
@@ -149,6 +165,11 @@ class VoiceHost:
             self.failure_result = None
             self._output_pcm = []
             self._playback_cleanup_pending = False
+            self._plugin_press = False
+            self._plugin_started = False
+            self._plugin_pcm = []
+            self._plugin_pcm_samples = 0
+            self._cancel_plugin_hold()
             if services.claim_detection is not None and services.claim_detection():
                 # 按键检测进行中：这次麦克风按下只当作检测结果，既不录音，
                 # 也不发送语音快捷键、不切换语音模式。
@@ -173,6 +194,23 @@ class VoiceHost:
             # 走到这里说明话筒键解析成了语音动作：之前发布的"绑了普通按键"
             # 警告已过期，与小米链路 AudioStarted 仲裁点一样清掉。
             self._publish_mic_blocked("")
+            if self._plugin_voice_ready():
+                # 插件语音键（Vokie）：遥控器按下就已经在推 PCM，这里先收着；
+                # 按满长按阈值才开插件会话并把缓冲补发过去。短按只切模式，
+                # 不发任何快捷键、不开虚拟声卡。
+                self._plugin_press = True
+                self._plugin_started = False
+                self._plugin_pcm = []
+                self._plugin_pcm_samples = 0
+                self._press_delivered = False
+                self.engaged = False
+                self.decoder = ATVVSession(
+                    gain_db=float(services.settings().get("gain_db", 10.0))
+                )
+                self.state = "recording"
+                self._arm_plugin_hold()
+                self.reply("ready")
+                return
             if services.prepare_shortcut is not None:
                 services.prepare_shortcut()
             if self._begin_asr_capture():
@@ -312,6 +350,55 @@ class VoiceHost:
                 "Chromecast mic blocked publish failed"
             )
 
+    def _plugin_voice_ready(self) -> bool:
+        """本机是否有一条已连上插件的语音键在等这次长按。"""
+
+        callback = self.services.plugin_voice_ready
+        if callback is None:
+            return False
+        try:
+            return bool(callback())
+        except Exception:  # noqa: BLE001 - 插件状态查询失败不能卡住语音键
+            self.services.logger.exception(
+                "Chromecast plugin voice availability check failed"
+            )
+            return False
+
+    def _begin_plugin_voice_audio(self) -> bool:
+        callback = self.services.begin_plugin_voice_audio
+        if callback is None:
+            return False
+        try:
+            return bool(callback())
+        except Exception:  # noqa: BLE001 - 插件会话启动失败按失败处理
+            self.services.logger.exception(
+                "Chromecast plugin voice session start failed"
+            )
+            return False
+
+    def _forward_plugin_pcm(self, samples) -> bool:
+        callback = self.services.forward_plugin_voice_pcm
+        if callback is None:
+            return False
+        try:
+            return bool(callback(samples))
+        except Exception:  # noqa: BLE001 - 插件通道中断按失败处理
+            self.services.logger.exception(
+                "Chromecast plugin voice PCM forward failed"
+            )
+            return False
+
+    def _end_plugin_voice_audio(self, reason: str) -> None:
+        callback = self.services.end_plugin_voice_audio
+        if callback is None:
+            return
+        try:
+            callback(reason)
+        except Exception:  # noqa: BLE001 - 收尾失败不能卡住语音会话
+            self.services.logger.exception(
+                "Chromecast plugin voice session end failed"
+            )
+
     def _begin_asr_capture(self) -> bool:
         """本机识别是否接管这次按下（OpenMexia 语音槽）。"""
 
@@ -350,6 +437,60 @@ class VoiceHost:
                 "Chromecast OpenMexia capture end failed"
             )
             return False
+
+    def _arm_plugin_hold(self):
+        """按满长按阈值才通知 Vokie，之前的声音先攒着。"""
+
+        token = object()
+        self._cancel_plugin_hold()
+        timer = threading.Timer(TAP_MAX_SECONDS, self._deliver_plugin_hold, args=(token,))
+        timer.daemon = True
+        self._plugin_token = token
+        self._plugin_timer = timer
+        timer.start()
+
+    def _cancel_plugin_hold(self):
+        timer, self._plugin_timer = self._plugin_timer, None
+        self._plugin_token = None
+        if timer is not None:
+            try:
+                timer.cancel()
+            except Exception:  # noqa: BLE001 - cancellation is best effort
+                pass
+
+    def _deliver_plugin_hold(self, token):
+        """长按确认后开插件会话，并把之前攒下的 PCM 一起补发。"""
+
+        services = self.services
+        with services.shortcut.lock:
+            if token is not self._plugin_token:
+                return
+            self._plugin_token = None
+            self._plugin_timer = None
+            if (
+                not self._plugin_press
+                or self.state != "recording"
+                or self.stopping.is_set()
+            ):
+                return
+            if not self._begin_plugin_voice_audio():
+                self._plugin_pcm = []
+                self._plugin_pcm_samples = 0
+                self._fail_voice("插件语音会话未能启动")
+                return
+            self._plugin_started = True
+            self.engaged = True
+            buffered, self._plugin_pcm = self._plugin_pcm, []
+            self._plugin_pcm_samples = 0
+            for block in buffered:
+                if not self._forward_plugin_pcm(block):
+                    self._fail_voice("插件音频通道中断")
+                    return
+            services.set_active(True)
+            services.set_result(status.VOICE_RUNTIME_ACTIVE)
+            services.logger.info(
+                "Chromecast plugin voice audio held: attempt=%s", self.attempt
+            )
 
     def _arm_press_delay(self, action, delay, inject_mode):
         token = object()
@@ -425,6 +566,21 @@ class VoiceHost:
                 self._asr_capture = False
                 if self._end_asr_capture():
                     return
+            if self._plugin_press:
+                # 插件语音键的快速短按：没到长按阈值就撤掉待定会话，
+                # 只切模式，Vokie 完全不被惊动。
+                with self.services.shortcut.lock:
+                    started = self._plugin_started
+                    self._plugin_press = False
+                    self._plugin_started = False
+                    self._plugin_pcm = []
+                    self._plugin_pcm_samples = 0
+                    self._cancel_plugin_hold()
+                    if started:
+                        self._end_plugin_voice_audio("Chromecast tap")
+                if not started:
+                    self._notify_short_tap()
+                return
             if self._mic_passthrough_active():
                 # 话筒键绑成了普通按键：短按只走按键映射，不切语音模式。
                 return
@@ -459,6 +615,20 @@ class VoiceHost:
             return
         if self._asr_capture:
             self._forward_asr_pcm(samples)
+            return
+        if self._plugin_press:
+            if self._plugin_started:
+                if not self._forward_plugin_pcm(samples):
+                    self._fail_voice("插件音频通道中断")
+                return
+            self._plugin_pcm.append(samples)
+            self._plugin_pcm_samples += len(samples)
+            while (
+                self._plugin_pcm_samples > _PLUGIN_BUFFER_SAMPLES
+                and self._plugin_pcm
+            ):
+                dropped = self._plugin_pcm.pop(0)
+                self._plugin_pcm_samples -= len(dropped)
             return
         if not self.engaged or self.state != "recording":
             return
@@ -551,20 +721,34 @@ class VoiceHost:
             self._detection_press = False
             passthrough = self._passthrough
             self._passthrough = False
+            plugin_press = self._plugin_press
+            plugin_started = self._plugin_started
             self._cancel_press_delay()
+            self._cancel_plugin_hold()
             if (
                 from_remote_release
                 and not detection
                 and not passthrough
                 and not asr_committed
                 and self.failure_result is None
-                and (not delivered or quick_release)
+                and (
+                    (plugin_press and not plugin_started)
+                    or (not plugin_press and (not delivered or quick_release))
+                )
             ):
                 # Released inside the tap window: this press only switches the
                 # voice mode, like the Xiaomi mic. 延迟发送关闭时快捷键已经
                 # 下发过，这里照样补一次切模式（与小米实体键一致）。
                 services.shortcut.controller.cancel_pending()
                 tapped = True
+            if plugin_press:
+                self._plugin_press = False
+                self._plugin_started = False
+                self._plugin_pcm = []
+                self._plugin_pcm_samples = 0
+                if plugin_started:
+                    # 插件会话是这次按下自己开的，松手要主动通知 Vokie 收尾。
+                    self._end_plugin_voice_audio("Chromecast voice end")
             tail, self._output_pcm = self._output_pcm, []
             if tail and self.failure_result is None and not self.stopping.is_set():
                 # A normal remote release drains the last partial block before

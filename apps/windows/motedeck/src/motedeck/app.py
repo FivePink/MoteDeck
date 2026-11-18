@@ -453,6 +453,8 @@ class RC003App(
         self._plugin_voice_started_this_press = False
         # 本次按下是否已经替插件发过 MIC_OPEN（收尾时据此决定要不要关）。
         self._plugin_voice_mic_opened = False
+        # 谷歌遥控器当前插件会话对应的语音键（插件音频分支用）。
+        self._chromecast_plugin_voice_slot: Optional[int] = None
         # OpenMexia 语音键：录音走本地 SenseVoice 离线识别，识别文字再交给
         # OpenMexia 执行设备指令。识别在后台线程里做，这里只攒 PCM。
         self._asr_runner = local_asr.LocalAsrRunner(self._config_root)

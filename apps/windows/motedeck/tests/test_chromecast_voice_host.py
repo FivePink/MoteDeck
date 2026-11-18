@@ -205,5 +205,85 @@ class MicPassthroughTests(unittest.TestCase):
         self.assertEqual(self.blocked_reasons[-1], "")
 
 
+class PluginVoiceTests(unittest.TestCase):
+    """插件语音键（Vokie）：短按切模式，长按把 PCM 直接过户给插件。"""
+
+    def setUp(self):
+        self.audio = _FakeAudio()
+        self.shortcut = _FakeShortcut(tokens=None)
+        self.client = _FakeClient()
+        self.short_taps = []
+        self.begun = 0
+        self.sent = []
+        self.ends = []
+
+    def _host(self):
+        services = VoiceHostServices(
+            audio=self.audio,
+            shortcut=self.shortcut,
+            settings=lambda: {"gain_db": 10.0},
+            logger=logging.getLogger("test"),
+            reload_settings=lambda: None,
+            apply_pending_settings=lambda: None,
+            begin_diagnostic=lambda **kwargs: None,
+            finish_diagnostic=lambda *args, **kwargs: None,
+            set_active=lambda state: None,
+            set_result=lambda result: None,
+            disable_forwarding=lambda: None,
+            on_short_tap=lambda: self.short_taps.append(True),
+            press_delay_seconds=lambda: 0.0,
+            inject_mode=lambda: None,
+            needs_shortcut=lambda: False,
+            plugin_voice_ready=lambda: True,
+            begin_plugin_voice_audio=self._begin,
+            forward_plugin_voice_pcm=self._forward,
+            end_plugin_voice_audio=self.ends.append,
+            mic_passthrough=lambda: False,
+        )
+        host = VoiceHost(services)
+        host.client = self.client
+        return host
+
+    def _begin(self):
+        self.begun += 1
+        return True
+
+    def _forward(self, samples):
+        self.sent.append(list(samples))
+        return True
+
+    def test_press_buffers_audio_without_a_shortcut_or_virtual_sound_card(self):
+        host = self._host()
+        host._handle(_host_start_event(3))
+        self.assertEqual(self.begun, 0)
+        self.assertEqual(self.audio.open_calls, 0)
+        self.assertEqual(self.shortcut.controller.press_calls, 0)
+        host._output([5, 6])
+        self.assertEqual(self.sent, [])
+        host._deliver_plugin_hold(host._plugin_token)
+        self.assertEqual(self.begun, 1)
+        self.assertEqual(self.sent, [[5, 6]])
+
+    def test_short_tap_switches_mode_and_never_opens_the_plugin_session(self):
+        host = self._host()
+        host._handle(_host_start_event(3))
+        host._output([1])
+        host._handle(_host_stop_event(3))
+        self.assertEqual(self.short_taps, [True])
+        self.assertEqual(self.begun, 0)
+        self.assertEqual(self.ends, [])
+        self.assertEqual(self.audio.open_calls, 0)
+
+    def test_release_after_the_long_press_window_ends_the_plugin_session(self):
+        host = self._host()
+        host._handle(_host_start_event(3))
+        host._deliver_plugin_hold(host._plugin_token)
+        host._output([1, 2])
+        host._handle(_host_stop_event(3))
+        self.assertEqual(self.sent, [[1, 2]])
+        self.assertEqual(self.ends, ["Chromecast voice end"])
+        self.assertEqual(self.short_taps, [])
+
+
 if __name__ == "__main__":
     unittest.main()

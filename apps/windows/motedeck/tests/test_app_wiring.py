@@ -1806,7 +1806,8 @@ class HostHotkeyFailureSuppressesMicOpenTests(_AppWiringTestCase):
             bridge.audio_frames,
             [array.array("h", [100, -100]).tobytes()],
         )
-        self.assertEqual(bridge.audio_stops, 1)
+        # 会话开始时先补一条 stop 收掉残留的闪记，松手时再发一条正常收尾。
+        self.assertEqual(bridge.audio_stops, 2)
         self.assertFalse(self.app._plugin_voice_audio_active)
         self.assertFalse(self.app._voice_pcm_forwarding_enabled)
         self.assertFalse(self.app._plugin_voice_audio_stream)
