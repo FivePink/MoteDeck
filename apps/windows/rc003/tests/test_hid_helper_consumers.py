@@ -1,4 +1,5 @@
 import shutil
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -88,6 +89,40 @@ class HidHelperConsumerTests(unittest.TestCase):
                 hid_helper_consumers._inspect_marker(current_marker)[0],
                 hid_helper_consumers._MarkerState.VALID,
             )
+
+    def test_registration_removes_only_an_alias_of_the_current_executable(self):
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            config_root = root / "config"
+            old_path = self._distribution(root, "old-path", installed=True)
+            current_path = self._distribution(root, "current-path", installed=True)
+            old_marker = hid_helper_consumers.register_current_consumer(
+                config_root,
+                frozen=True,
+                executable=str(old_path),
+            )
+            assert old_marker is not None
+
+            with mock.patch.object(
+                hid_helper_consumers.os.path,
+                "samefile",
+                side_effect=lambda first, second: {
+                    os.path.normcase(str(first)), os.path.normcase(str(second))
+                }
+                == {
+                    os.path.normcase(str(old_path)),
+                    os.path.normcase(str(current_path)),
+                },
+            ):
+                current_marker = hid_helper_consumers.register_current_consumer(
+                    config_root,
+                    frozen=True,
+                    executable=str(current_path),
+                )
+
+            assert current_marker is not None
+            self.assertFalse(old_marker.exists())
+            self.assertTrue(current_marker.exists())
 
     def test_unrecognized_executable_name_cannot_register_consumer(self):
         with tempfile.TemporaryDirectory() as raw:

@@ -65,6 +65,18 @@ class BridgeRuntimeStatusTests(unittest.TestCase):
         self.assertEqual(bridge_runtime_status.read_status(self.root), written)
         self.assertEqual(written.voice_runtime_state, "host_unconfirmed")
 
+    def test_model_number_round_trips_through_runtime_status(self):
+        written = bridge_runtime_status.publish_status(
+            self.root,
+            bridge_runtime_status.BridgeConnectionState.CONNECTED,
+            pid=1234,
+            remote_model="RC001",
+        )
+        loaded = bridge_runtime_status.read_status(self.root)
+        self.assertIsNotNone(loaded)
+        self.assertEqual(written.remote_model, "RC001")
+        self.assertEqual(loaded.remote_model, "RC001")
+
     def test_invalid_battery_values_are_never_published_or_displayed(self):
         for invalid in (-1, 101, True, 59.5):
             with self.subTest(invalid=invalid), self.assertRaises(ValueError):

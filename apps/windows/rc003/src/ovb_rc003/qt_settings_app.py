@@ -2334,7 +2334,18 @@ def _load_qt_classes() -> dict:
                 self._remote_save_uncertain = True
                 self._remote_feedback("设备设置保存异常且未能恢复；请重新选择设备并保存成功后再启动服务。")
                 return False
-            except Exception:
+            except Exception as exc:
+                try:
+                    logging_setup.get_logger(self._config_root).exception(
+                        "remote selection save failed: config_root=%s key_prefix=%s "
+                        "profile=%s error_type=%s",
+                        self._config_root,
+                        str(selection.get("active", ""))[:12],
+                        remote_selection.active_profile(selection),
+                        type(exc).__name__,
+                    )
+                except Exception:
+                    pass
                 self._remote_feedback("设备选择保存失败，原选择已保留，请重试。")
                 return False
             self._config = saved
@@ -2516,6 +2527,8 @@ def _load_qt_classes() -> dict:
             )
             if detected_profile != self._detected_remote_profile:
                 self._detected_remote_profile = detected_profile
+                if detected_profile:
+                    self._persist_detected_remote_profile(detected_profile)
                 self.selectedDeviceChanged.emit()
                 self.remoteSelectionChanged.emit()
 
@@ -2531,6 +2544,44 @@ def _load_qt_classes() -> dict:
             if voice_runtime_state != self._voice_runtime_state:
                 self._voice_runtime_state = voice_runtime_state
                 self.voiceRuntimeStatusChanged.emit()
+
+        def _persist_detected_remote_profile(self, profile: str) -> None:
+            """Persist the GATT model after the shared Bluetooth name is known."""
+
+            from . import remote_selection
+
+            selection = self._remote_selection()
+            key = selection["active"]
+            current = remote_selection.profile_for_key(selection, key)
+            if (
+                not key
+                or current not in remote_selection.XIAOMI_PROFILES
+                or profile not in remote_selection.XIAOMI_PROFILES
+                or current == profile
+            ):
+                return
+            try:
+                corrected = remote_selection.reprofile_device(selection, key, profile)
+                if not self._save_remote_selection(corrected):
+                    return
+                self._remote_devices = [
+                    dict(row, profile=profile,
+                         label=remote_selection.label(
+                             row["key"], profile,
+                             [item["key"] for item in self._remote_devices],
+                         ))
+                    if row["key"] == key else row
+                    for row in self._remote_devices
+                ]
+            except Exception as exc:
+                try:
+                    logging_setup.get_logger(self._config_root).exception(
+                        "detected remote profile persistence failed: key_prefix=%s "
+                        "profile=%s error_type=%s",
+                        key[:12], profile, type(exc).__name__,
+                    )
+                except Exception:
+                    pass
 
         @staticmethod
         def _runtime_status_requires_restart(
@@ -2658,6 +2709,11 @@ def _load_qt_classes() -> dict:
             physicalizer_ready = status.voice_key_physicalizer_state == "ready"
             if status.hid_tap_state in {"authorization_cancelled", "authorization_failed"}:
                 input_text = "按键授权未完成；请在设备页点击“重新授权”"
+            elif (
+                status.hid_tap_state == frida_compat.HidTapState.WAITING_HOST.value
+                and raw_ready
+            ):
+                input_text = "遥控器连接正常；等待 Windows 按键宿主，软件会自动恢复"
             elif raw_ready and tap_ready:
                 if physicalizer_recovering:
                     input_text = (

@@ -221,6 +221,114 @@ def enumerate_matching_device_paths(*, matches=None, diagnostic: dict | None = N
     return paths
 
 
+def enumerate_present_hid_interface_paths(*, matches=None) -> List[str]:
+    """Return present HID interface paths from Windows SetupAPI.
+
+    SetupAPI can expose a Bluetooth HID collection before that collection is
+    visible to GetRawInputDeviceList. The caller still performs the selected
+    device container-identity check before using any returned path.
+    """
+
+    _require_windows()
+    matches = matches or hid_identity.device_path_matches_rc003
+    setupapi = ctypes.WinDLL("setupapi", use_last_error=True)
+
+    class GUID(ctypes.Structure):
+        _fields_ = [
+            ("Data1", wintypes.DWORD),
+            ("Data2", wintypes.WORD),
+            ("Data3", wintypes.WORD),
+            ("Data4", wintypes.BYTE * 8),
+        ]
+
+    class SP_DEVICE_INTERFACE_DATA(ctypes.Structure):
+        _fields_ = [
+            ("cbSize", wintypes.DWORD),
+            ("InterfaceClassGuid", GUID),
+            ("Flags", wintypes.DWORD),
+            ("Reserved", ctypes.c_void_p),
+        ]
+
+    hid_guid = GUID.from_buffer_copy(
+        uuid.UUID("4d1e55b2-f16f-11cf-88cb-001111000030").bytes_le
+    )
+    setupapi.SetupDiGetClassDevsW.argtypes = (
+        ctypes.POINTER(GUID),
+        wintypes.LPCWSTR,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+    )
+    setupapi.SetupDiGetClassDevsW.restype = ctypes.c_void_p
+    setupapi.SetupDiEnumDeviceInterfaces.argtypes = (
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.POINTER(GUID),
+        wintypes.DWORD,
+        ctypes.POINTER(SP_DEVICE_INTERFACE_DATA),
+    )
+    setupapi.SetupDiEnumDeviceInterfaces.restype = wintypes.BOOL
+    setupapi.SetupDiGetDeviceInterfaceDetailW.argtypes = (
+        ctypes.c_void_p,
+        ctypes.POINTER(SP_DEVICE_INTERFACE_DATA),
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD),
+        ctypes.c_void_p,
+    )
+    setupapi.SetupDiGetDeviceInterfaceDetailW.restype = wintypes.BOOL
+    setupapi.SetupDiDestroyDeviceInfoList.argtypes = (ctypes.c_void_p,)
+    setupapi.SetupDiDestroyDeviceInfoList.restype = wintypes.BOOL
+
+    handle = setupapi.SetupDiGetClassDevsW(
+        ctypes.byref(hid_guid), None, None, 0x00000002 | 0x00000010
+    )
+    invalid_handle = ctypes.c_void_p(-1).value
+    if not handle or handle == invalid_handle:
+        raise RawInputUnavailableError("SetupAPI HID interface enumeration failed")
+
+    paths: List[str] = []
+    try:
+        for index in range(4096):
+            interface = SP_DEVICE_INTERFACE_DATA()
+            interface.cbSize = ctypes.sizeof(SP_DEVICE_INTERFACE_DATA)
+            if not setupapi.SetupDiEnumDeviceInterfaces(
+                handle, None, ctypes.byref(hid_guid), index, ctypes.byref(interface)
+            ):
+                if ctypes.get_last_error() == 259:
+                    break
+                raise RawInputUnavailableError(
+                    "SetupAPI HID interface enumeration failed"
+                )
+            required = wintypes.DWORD(0)
+            setupapi.SetupDiGetDeviceInterfaceDetailW(
+                handle,
+                ctypes.byref(interface),
+                None,
+                0,
+                ctypes.byref(required),
+                None,
+            )
+            if required.value < 8:
+                continue
+            detail = ctypes.create_string_buffer(required.value)
+            ctypes.cast(detail, ctypes.POINTER(wintypes.DWORD))[0] = 8
+            if not setupapi.SetupDiGetDeviceInterfaceDetailW(
+                handle,
+                ctypes.byref(interface),
+                detail,
+                required.value,
+                ctypes.byref(required),
+                None,
+            ):
+                continue
+            path = ctypes.wstring_at(ctypes.addressof(detail) + 4)
+            if path and matches(path):
+                paths.append(path)
+    finally:
+        setupapi.SetupDiDestroyDeviceInfoList(handle)
+    return paths
+
+
 def _record_enumeration_error(diagnostic, stage, result, winerror):
     if diagnostic is None:
         return

@@ -12741,7 +12741,7 @@ class OffscreenQmlLoadTests(unittest.TestCase):
         )
         self.assertEqual(
             cases["raw_ready_hid_wait"]["buttons"]["state"],
-            "未连接",
+            "等待 Windows 按键宿主",
         )
         self.assertEqual(
             cases["raw_ready_hid_wait"]["service"]["state"], "已连接"

@@ -31,6 +31,7 @@ from typing import Any, Callable, Mapping, Optional, Sequence
 
 from . import dev_session, product_identity
 from . import hid_injection_diagnostics as injection_diagnostics
+from .atomic_file import replace_file
 
 
 LEGACY_TASK_NAME = r"\RemoteMic\RC003\HidTapInjector"
@@ -1054,7 +1055,10 @@ def _write_manifest_atomic(
             user_sid=manifest.owner_sid,
             directory=False,
         )
-        _replace(temporary, path)
+        if _replace is os.replace:
+            replace_file(temporary, path)
+        else:
+            _replace(temporary, path)
     except (HidElevationError, OSError, ValueError) as exc:
         raise HidElevationError("helper_manifest_write_failed") from exc
     finally:
@@ -1094,7 +1098,7 @@ def _restore_optional_file_bytes(
     try:
         temporary.write_bytes(contents)
         _apply_path_security(temporary, user_sid=user_sid, directory=False)
-        os.replace(temporary, path)
+        replace_file(temporary, path)
     except OSError as exc:
         raise HidElevationError("helper_manifest_restore_failed") from exc
     finally:
@@ -2320,7 +2324,7 @@ def _copy_verified_helper(
         if _sha256(source) != _sha256(temporary):
             raise HidElevationError("helper_copy_hash_mismatch")
         _apply_path_security(temporary, user_sid=user_sid, directory=False)
-        os.replace(temporary, destination)
+        replace_file(temporary, destination)
     except HidElevationError:
         raise
     except (OSError, ValueError) as exc:
@@ -2471,7 +2475,9 @@ def install_task(
                 if existing_state.available:
                     if existing_manifest.helper_generation > HELPER_GENERATION:
                         return
-                    reuse_existing_manifest = True
+                    reuse_existing_manifest = (
+                        existing_manifest.helper_sha256 == source_hash
+                    )
                 if existing_manifest.helper_generation > HELPER_GENERATION:
                     raise HidElevationError("newer_helper_preserved")
 

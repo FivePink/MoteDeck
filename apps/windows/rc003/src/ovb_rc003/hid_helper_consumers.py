@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterator, Optional
 
 from . import hid_elevation_windows, product_identity, single_instance
+from .atomic_file import replace_file
 
 
 CONSUMER_SCHEMA_VERSION = 1
@@ -99,8 +100,15 @@ def _consumer_key(executable: Path) -> str:
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:24]
 
 
+def _same_executable_file(first: Path, second: Path) -> bool:
+    try:
+        return os.path.samefile(first, second)
+    except (FileNotFoundError, OSError):
+        return False
+
+
 def consumer_directory(config_root: Path) -> Path:
-    return Path(config_root) / CONSUMER_DIRECTORY_NAME
+    return Path(config_root).resolve() / CONSUMER_DIRECTORY_NAME
 
 
 def consumer_marker_path(config_root: Path, executable: Path) -> Path:
@@ -156,6 +164,7 @@ def _register_current_consumer_unlocked(
     directory = consumer_directory(config_root)
     directory.mkdir(parents=True, exist_ok=True)
     destination = consumer_marker_path(config_root, app)
+    destination = destination.resolve()
     temporary = destination.with_name(
         f".{destination.name}.{os.getpid()}.{time.time_ns()}.tmp"
     )
@@ -164,7 +173,7 @@ def _register_current_consumer_unlocked(
             json.dumps(_marker_payload(app), indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
-        os.replace(temporary, destination)
+        replace_file(temporary, destination)
     finally:
         try:
             temporary.unlink(missing_ok=True)
@@ -173,6 +182,11 @@ def _register_current_consumer_unlocked(
     _prune_stale_consumer_markers_unlocked(
         config_root,
         exclude_marker=destination,
+    )
+    _prune_current_executable_aliases_unlocked(
+        config_root,
+        executable=app,
+        current_marker=destination,
     )
     return destination
 
@@ -320,6 +334,32 @@ def _prune_stale_consumer_markers_unlocked(
             continue
         state, _raw = _inspect_marker(marker)
         if state is _MarkerState.STALE:
+            _remove_marker_best_effort(marker)
+
+
+def _prune_current_executable_aliases_unlocked(
+    config_root: Path,
+    *,
+    executable: Path,
+    current_marker: Path,
+) -> None:
+    directory = consumer_directory(config_root)
+    try:
+        entries = list(os.scandir(directory))
+    except (FileNotFoundError, OSError):
+        return
+
+    for entry in entries:
+        if not entry.name.endswith(".json"):
+            continue
+        marker = Path(entry.path)
+        if marker == current_marker:
+            continue
+        state, raw = _inspect_marker(marker)
+        if state is not _MarkerState.VALID or not isinstance(raw, dict):
+            continue
+        candidate = _lexical_executable_path(str(raw["executable_path"]))
+        if _same_executable_file(executable, candidate):
             _remove_marker_best_effort(marker)
 
 

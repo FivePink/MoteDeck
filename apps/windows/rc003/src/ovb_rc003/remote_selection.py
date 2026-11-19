@@ -199,6 +199,19 @@ def select_device(selection: dict, key: str) -> dict:
     return result
 
 
+def reprofile_device(selection: dict, key: str, profile: str) -> dict:
+    """Update one saved device after an authoritative GATT model read."""
+
+    result = normalize(selection)
+    if profile not in XIAOMI_PROFILES or not valid_key(key):
+        raise SelectionError("设备型号信息不受支持。")
+    row = next((item for item in result["devices"] if item["key"] == key), None)
+    if row is None:
+        raise SelectionError("请先添加这台设备。")
+    row["profile"] = profile
+    return result
+
+
 def select_paired_device(selection: dict, key: str, paired: list[dict]) -> tuple[dict, bool]:
     """Prepare registration + selection without writing or activating anything.
 

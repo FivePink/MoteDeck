@@ -1,4 +1,5 @@
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -445,6 +446,14 @@ class SaveConfigPrivacyGuardTests(unittest.TestCase):
             bad_bindings["device_token"] = "aabbccddeeff"
             with self.assertRaises(config.ConfigPrivacyError):
                 config.save_key_bindings(path, bad_bindings)
+
+    def test_atomic_save_resolves_windows_redirected_config_path(self):
+        if os.name != "nt":
+            self.skipTest("Windows path redirection is Windows-specific")
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "atomic-test.json"
+            config._save_bytes_atomic(path, b"resolved")
+            self.assertEqual(path.read_bytes(), b"resolved")
 
     def test_save_rejects_device_paths_and_platform_device_ids(self):
         for forbidden_key in (

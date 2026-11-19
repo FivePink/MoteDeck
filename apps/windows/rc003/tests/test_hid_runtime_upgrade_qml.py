@@ -146,10 +146,10 @@ device_page = find(window, "deviceScroll").parent()
 voice_page = find(window, "voiceScroll").parent()
 root_path = m.config.config_root()
 
-def input_state(hid_state):
+def input_state(hid_state, raw_state="ready"):
     bridge_runtime_status.publish_status(
         root_path, bridge_runtime_status.BridgeConnectionState.CONNECTED,
-        pid=os.getpid(), raw_input_state="ready", hid_tap_state=hid_state,
+        pid=os.getpid(), raw_input_state=raw_state, hid_tap_state=hid_state,
         voice_key_physicalizer_state="ready",
     )
     status = bridge_runtime_status.read_status(root_path)
@@ -217,6 +217,15 @@ assert device_page.buttonReceiverStateCode() == "restart_computer"
 input_state(frida_compat.HidTapState.SHARED_HOST.value)
 assert device_page.buttonReceiverStateText() == "按键来源待区分"
 assert not device_page.bridgeNeedsRestartAction()
+
+input_state(frida_compat.HidTapState.WAITING_HOST.value)
+assert device_page.buttonReceiverStateCode() == "waiting_hid_host"
+assert device_page.buttonReceiverStateText() == "等待 Windows 按键宿主"
+assert "Windows 按键宿主暂不可用" in find(window, "buttonReceiverRow").property("descriptionText")
+assert not device_page.bridgeNeedsRestartAction()
+input_state(frida_compat.HidTapState.WAITING_HOST.value, raw_state="no_device")
+assert device_page.buttonReceiverStateCode() == "waiting_remote"
+assert device_page.buttonReceiverStateText() == "未连接"
 
 # After a compatible component has loaded, first input and normal operation
 # retain the existing UI states.

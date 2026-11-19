@@ -26,6 +26,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
+from .atomic_file import replace_file
+
 APP_ID = "RemoteMic"
 PRODUCT_ID = "RC003"
 
@@ -1798,6 +1800,7 @@ def _assert_settings_writable(data: dict) -> None:
 
 def _save_bytes_atomic(path: Path, content: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    path = path.resolve()
     file_descriptor, temporary_name = tempfile.mkstemp(
         prefix=f".{path.name}.", suffix=".tmp", dir=str(path.parent)
     )
@@ -1806,7 +1809,7 @@ def _save_bytes_atomic(path: Path, content: bytes) -> None:
             handle.write(content)
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(temporary_name, path)
+        replace_file(temporary_name, path)
     except Exception:
         try:
             os.unlink(temporary_name)

@@ -113,9 +113,11 @@ HID_TAP_BOUNDED_RETRYABLE_INJECTION_DETAILS = frozenset(
     {
         "hid_helper_task_service_unavailable",
         "hid_helper_task_start_failed",
+        "hid_helper_host_unavailable",
     }
 )
 HID_TAP_TRANSIENT_INJECTION_MAX_ATTEMPTS = 3
+HID_TAP_HOST_RETRY_COOLDOWN_SECONDS = 5.0
 _LOGGER = logging.getLogger("ovb_rc003.hid_tap")
 _HOOK_ERROR_CODES = frozenset({
     "copy_export_missing", "close_export_missing", "hook_install_exception",
@@ -1162,6 +1164,7 @@ class RC003HidReportTap:
         authorization_blocked = False
         injection_attempted_pid: int | None = None
         injection_failed_pid: int | None = None
+        injection_failed_retry_at: float | None = None
         transient_retry_pid: int | None = None
         transient_injection_failures = 0
         connection_deadline: float | None = None
@@ -1193,6 +1196,7 @@ class RC003HidReportTap:
             if pid != injection_attempted_pid and pid != injection_failed_pid:
                 injection_attempted_pid = None
                 injection_failed_pid = None
+                injection_failed_retry_at = None
                 connection_deadline = None
                 reload_mismatch = ""
             if pid != transient_retry_pid:
@@ -1202,9 +1206,14 @@ class RC003HidReportTap:
                 injection_failed_pid = pid
                 self._set_status(HidTapState.RESTART_REQUIRED, reload_mismatch)
             if pid == injection_failed_pid:
-                # Retrying an identical injection into the same system process
-                # adds risk and alternates FAILED/INJECTING in the log forever.
-                # A new WUDFHost PID is the safe retry boundary.
+                if (
+                    injection_failed_retry_at is not None
+                    and time.monotonic() >= injection_failed_retry_at
+                ):
+                    injection_failed_pid = None
+                    injection_failed_retry_at = None
+                    transient_injection_failures = 0
+                    continue
                 self.stop_event.wait(self.retry_delay)
                 continue
 
@@ -1248,7 +1257,25 @@ class RC003HidReportTap:
                         if not retry_same_pid:
                             injection_failed_pid = pid
                         if detail == "hid_helper_host_restarted":
+                            injection_attempted_pid = None
+                            injection_failed_pid = None
+                            injection_failed_retry_at = None
                             self._set_status(HidTapState.WAITING_HOST, detail)
+                            self.stop_event.wait(self.retry_delay)
+                            continue
+                        if detail == "hid_helper_host_unavailable":
+                            if retry_same_pid:
+                                injection_attempted_pid = None
+                                injection_failed_pid = None
+                                injection_failed_retry_at = None
+                                self._set_status(HidTapState.WAITING_HOST, detail)
+                                self.stop_event.wait(self.retry_delay)
+                                continue
+                            injection_failed_retry_at = (
+                                time.monotonic()
+                                + HID_TAP_HOST_RETRY_COOLDOWN_SECONDS
+                            )
+                            self._set_status(HidTapState.FAILED, detail)
                             self.stop_event.wait(self.retry_delay)
                             continue
                         self._set_status(

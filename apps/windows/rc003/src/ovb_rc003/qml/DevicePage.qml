@@ -140,12 +140,17 @@ Item {
 
     function hidTapWaitsForRemote() {
         return valueIn(SettingsController.hidTapState, [
-            "waiting_for_rc003_host", "waiting_for_gadget_connection"
+            "waiting_for_gadget_connection"
         ])
     }
 
+    function hidTapWaitsForHost() {
+        return SettingsController.hidTapState === "waiting_for_rc003_host"
+    }
+
     function buttonReceiverWaitsForRemote() {
-        return hidTapWaitsForRemote()
+        return (hidTapWaitsForRemote()
+            || (hidTapWaitsForHost() && rawInputWaitsForRemote()))
             && (rawInputWaitsForRemote() || rawInputReady())
     }
 
@@ -199,13 +204,15 @@ Item {
                 return "component_unavailable"
             if (SettingsController.hidTapState === "selected_device_shared_host")
                 return "shared_host"
+            if (SettingsController.rawInputState === "ambiguous")
+                return "conflict"
+            if (hidTapWaitsForHost() && rawInputReady())
+                return "waiting_hid_host"
             if (SettingsController.hidTapState === "restart_required")
                 return "restart_computer"
             if (SettingsController.bridgeLaunchBusy
                     || SettingsController.bridgeReconnectBusy)
                 return "checking"
-            if (SettingsController.rawInputState === "ambiguous")
-                return "conflict"
             const rawReady = rawInputReady()
             const tapReady = hidTapReady()
             const deviceCode = currentDeviceStateCode()
@@ -275,6 +282,7 @@ Item {
         case "component_unavailable": return qsTr("按键组件不完整")
         case "restart_computer": return qsTr("请重启电脑一次")
         case "shared_host": return qsTr("按键来源待区分")
+        case "waiting_hid_host": return qsTr("等待 Windows 按键宿主")
         case "waiting_remote": return qsTr("未连接")
         case "unpaired": return qsTr("请先配对遥控器")
         case "conflict": return qsTr("设备识别异常")
@@ -295,6 +303,7 @@ Item {
         if (code === "ready")
             return tokens.successColor
         if (code === "checking" || code === "waiting_remote" || code === "recovering"
+                || code === "waiting_hid_host"
                 || code === "custom_only"
                 || code === "original_only")
             return tokens.voiceAccent
@@ -789,6 +798,8 @@ Item {
                         ? qsTr("旧按键组件未释放，请重启电脑")
                         : root.buttonReceiverStateCode() === "component_unavailable"
                         ? qsTr("组件缺失或校验失败，补齐后重开程序")
+                        : root.buttonReceiverStateCode() === "waiting_hid_host"
+                        ? qsTr("Windows 按键宿主暂不可用，正在自动恢复")
                         : root.buttonReceiverStateCode() === "recovering"
                         ? qsTr("按键设备尚未就绪，正在自动重试")
                         : qsTr("让遥控器按键在电脑上生效")

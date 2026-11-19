@@ -2037,7 +2037,7 @@ class TaskLifecycleTests(unittest.TestCase):
                     )
                 )
 
-    def test_install_cleanup_reuses_a_valid_same_generation_helper(self):
+    def test_install_cleanup_replaces_a_same_generation_helper_with_new_hash(self):
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
             source = root / "bundle" / hid_elevation_windows.HELPER_EXE_NAME
@@ -2100,9 +2100,10 @@ class TaskLifecycleTests(unittest.TestCase):
             bundled_target = owner_root / hid_elevation_windows.helper_relative_path(
                 hid_elevation_windows._sha256(source)
             )
-            self.assertEqual(saved.helper_sha256, installed_digest)
-            self.assertEqual(target.read_bytes(), installed_source.read_bytes())
-            self.assertFalse(bundled_target.exists())
+            source_digest = hid_elevation_windows._sha256(source)
+            self.assertEqual(saved.helper_sha256, source_digest)
+            self.assertTrue(bundled_target.is_file())
+            self.assertEqual(bundled_target.read_bytes(), source.read_bytes())
             self.assertFalse(orphan_target.exists())
 
     def test_install_recovers_a_missing_manifest_and_cleans_the_old_helper(self):

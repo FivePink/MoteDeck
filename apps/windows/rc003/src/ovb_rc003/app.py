@@ -1589,9 +1589,19 @@ class RC003App:
         try:
             device_path = None
             paths = raw_input_windows.enumerate_matching_device_paths(diagnostic=enumeration)
-            device_path = remote_selection.selected_raw_path(
-                paths, self._selected_remote_key, diagnostic=selection)
-            lookup_outcome = "path_selected"
+            try:
+                device_path = remote_selection.selected_raw_path(
+                    paths, self._selected_remote_key, diagnostic=selection)
+            except hid_identity.NoDevicePathFoundError:
+                if self._remote_profile != remote_selection.RC001_PROFILE:
+                    raise
+                setup_paths = raw_input_windows.enumerate_present_hid_interface_paths()
+                enumeration["setupapi_paths"] = len(setup_paths)
+                device_path = remote_selection.selected_raw_path(
+                    setup_paths, self._selected_remote_key, diagnostic=selection)
+                lookup_outcome = "setupapi_path_selected"
+            else:
+                lookup_outcome = "path_selected"
         except raw_input_windows.RawInputUnavailableError as exc:
             lookup_outcome = "unavailable"
             self._set_runtime_input_state(raw_input_state="unavailable")

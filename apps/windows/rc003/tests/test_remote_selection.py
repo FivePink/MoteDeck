@@ -22,6 +22,20 @@ def saved_selection(active=A):
 
 
 class SelectionContractTests(unittest.TestCase):
+    def test_model_number_profiles_are_strict_and_normalized(self):
+        self.assertEqual(selection.profile_for_model_number(" rc001\n"), selection.RC001_PROFILE)
+        self.assertEqual(selection.profile_for_model_number("RC003"), selection.RC003_PROFILE)
+        self.assertEqual(selection.profile_for_model_number("ARN9"), selection.RC003_PROFILE)
+        self.assertEqual(selection.profile_for_model_number("unknown"), "")
+
+    def test_reprofile_device_updates_only_existing_xiaomi_device(self):
+        current = saved_selection()
+        corrected = selection.reprofile_device(current, A, selection.RC001_PROFILE)
+        self.assertEqual(selection.profile_for_key(corrected, A), selection.RC001_PROFILE)
+        self.assertEqual(selection.profile_for_key(corrected, B), selection.RC003_PROFILE)
+        with self.assertRaises(selection.SelectionError):
+            selection.reprofile_device(current, "f" * 64, selection.RC001_PROFILE)
+
     def test_scan_names_survive_result_transfer_without_enabling_unsupported_devices(self):
         devices = [SimpleNamespace(name=name, properties={"System.Devices.Aep.ContainerId": value})
                    for name, value in (

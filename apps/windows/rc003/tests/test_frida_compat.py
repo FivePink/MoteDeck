@@ -1544,6 +1544,99 @@ class TapStateTests(unittest.TestCase):
             (frida_compat.HidTapState.WAITING_CONNECTION.value, ""),
         )
 
+    def test_host_unavailable_is_bounded_and_not_reported_as_a_permanent_loop(self):
+        statuses = []
+        injector = mock.Mock(
+            side_effect=frida_compat.HidTapInjectionError(
+                "hid_helper_host_unavailable"
+            )
+        )
+        tap = frida_compat.RC003HidReportTap(
+            lambda _report_id, _payload: None,
+            enabled=False,
+            injector=injector,
+            status_handler=lambda status, detail: statuses.append((status, detail)),
+        )
+        wait_count = 0
+
+        def bounded_wait(_delay):
+            nonlocal wait_count
+            wait_count += 1
+            if wait_count == frida_compat.HID_TAP_TRANSIENT_INJECTION_MAX_ATTEMPTS + 1:
+                tap.stop_event.set()
+
+        tap.stop_event.wait = mock.Mock(side_effect=bounded_wait)
+        server = mock.MagicMock()
+        with mock.patch.object(
+            frida_compat.frida_hid_tap_runtime,
+            "find_rc003_hidogatt_host_pid",
+            return_value=2468,
+        ), mock.patch.object(frida_compat.socket, "socket", return_value=server):
+            tap._run()
+
+        self.assertEqual(
+            injector.call_count,
+            frida_compat.HID_TAP_TRANSIENT_INJECTION_MAX_ATTEMPTS,
+        )
+        self.assertIn(
+            (frida_compat.HidTapState.WAITING_HOST.value, "hid_helper_host_unavailable"),
+            statuses,
+        )
+        self.assertEqual(
+            statuses[-1],
+            (frida_compat.HidTapState.FAILED.value, "hid_helper_host_unavailable"),
+        )
+
+    def test_host_unavailable_recovers_when_the_host_pid_changes(self):
+        statuses = []
+        injector = mock.Mock(
+            side_effect=[
+                *[
+                    frida_compat.HidTapInjectionError("hid_helper_host_unavailable")
+                    for _ in range(frida_compat.HID_TAP_TRANSIENT_INJECTION_MAX_ATTEMPTS)
+                ],
+                None,
+            ]
+        )
+        tap = frida_compat.RC003HidReportTap(
+            lambda _report_id, _payload: None,
+            enabled=False,
+            injector=injector,
+            status_handler=lambda status, detail: statuses.append((status, detail)),
+        )
+        wait_count = 0
+
+        def bounded_wait(_delay):
+            nonlocal wait_count
+            wait_count += 1
+            if wait_count == frida_compat.HID_TAP_TRANSIENT_INJECTION_MAX_ATTEMPTS + 1:
+                tap.stop_event.set()
+
+        tap.stop_event.wait = mock.Mock(side_effect=bounded_wait)
+        server = mock.MagicMock()
+
+        def stop_while_waiting_for_connection():
+            tap.stop_event.set()
+            raise frida_compat.socket.timeout()
+
+        server.accept.side_effect = stop_while_waiting_for_connection
+
+        with mock.patch.object(
+            frida_compat.frida_hid_tap_runtime,
+            "find_rc003_hidogatt_host_pid",
+            side_effect=[
+                *([2468] * frida_compat.HID_TAP_TRANSIENT_INJECTION_MAX_ATTEMPTS),
+                9753,
+            ],
+        ), mock.patch.object(frida_compat.socket, "socket", return_value=server):
+            tap._run()
+
+        self.assertEqual(injector.call_args_list[-1], mock.call(9753))
+        self.assertIn(
+            (frida_compat.HidTapState.INJECTING.value, ""),
+            statuses,
+        )
+
     def test_registered_task_timeout_does_not_retry_the_same_host_pid(self):
         injector = mock.Mock(
             side_effect=frida_compat.HidTapInjectionError(

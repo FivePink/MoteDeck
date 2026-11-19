@@ -24,6 +24,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Callable, Optional
 
+from .atomic_file import replace_file
+
 
 SCHEMA_VERSION = 3
 PREVIOUS_SCHEMA_VERSION = 2
@@ -306,8 +308,9 @@ def publish_status(
         battery_level=battery_level,
         remote_model=str(remote_model),
     )
-    path = status_path(config_root, session_id=session_id)
+    path = status_path(config_root, session_id=session_id).resolve()
     path.parent.mkdir(parents=True, exist_ok=True)
+    path = path.resolve()
     temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
     try:
         temporary.write_text(
@@ -340,7 +343,7 @@ def publish_status(
             ),
             encoding="utf-8",
         )
-        os.replace(temporary, path)
+        replace_file(temporary, path)
     finally:
         try:
             temporary.unlink()
@@ -496,7 +499,7 @@ def clear_status(
     bridge from deleting a replacement status published by a newer bridge.
     """
 
-    path = status_path(config_root, session_id=session_id)
+    path = status_path(config_root, session_id=session_id).resolve()
     expected_pid = None if pid is None else int(pid)
     claimed = path.with_name(f".{path.name}.{uuid.uuid4().hex}.clear")
     try:
